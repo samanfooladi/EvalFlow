@@ -5,4 +5,5 @@ urlpatterns = [
     path("django-admin/", admin.site.urls),
     path("api/v1/auth/", include("apps.accounts.urls")),
     path("api/v1/", include("apps.audit.urls")),
+    path("api/v1/", include("apps.reports.urls")),
 ]
