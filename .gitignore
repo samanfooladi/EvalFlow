@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Django
+backend/db.sqlite3
+backend/media/
+backend/test_media/
+backend/staticfiles/
+backend/.env
+.env
+
+# Node
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Tooling
+.pytest_cache/
+.coverage
+.idea/
+.vscode/
+*.log

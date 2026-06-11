@@ -1,0 +1,55 @@
+@import "vazirmatn/Vazirmatn-font-face.css";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Vazirmatn", "Segoe UI", system-ui, sans-serif;
+
+  /* Dark neutral palette with a teal accent */
+  --color-surface-950: #0c0e12;
+  --color-surface-900: #14171d;
+  --color-surface-800: #1c2027;
+  --color-surface-700: #262b34;
+  --color-surface-600: #343a45;
+
+  --color-ink-100: #f1f3f5;
+  --color-ink-300: #c3c9d1;
+  --color-ink-500: #8b939e;
+  --color-ink-600: #6a7280;
+
+  --color-accent-400: #2dd4bf;
+  --color-accent-500: #14b8a6;
+  --color-accent-600: #0d9488;
+
+  --color-finding-400: #f87171;
+  --color-finding-500: #ef4444;
+  --color-compliant-400: #4ade80;
+  --color-compliant-500: #22c55e;
+  --color-na-400: #94a3b8;
+  --color-warn-400: #fbbf24;
+}
+
+html {
+  background-color: var(--color-surface-950);
+  color: var(--color-ink-100);
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Numerals render Persian via font feature where available */
+.fa-nums {
+  font-feature-settings: "ss01";
+}
+
+::selection {
+  background: var(--color-accent-600);
+  color: white;
+}
+
+/* Thin scrollbars fitting the dark theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface-600) transparent;
+}

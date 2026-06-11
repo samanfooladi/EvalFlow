@@ -1,0 +1,44 @@
+# EvalFlow production nginx configuration (same-origin deployment).
+# The built frontend (frontend/dist) and the Django API share one origin,
+# so no CORS is needed and the refresh cookie stays first-party.
+
+server {
+    listen 443 ssl;
+    server_name evalflow.example.local;
+
+    ssl_certificate     /etc/nginx/ssl/evalflow.crt;
+    ssl_certificate_key /etc/nginx/ssl/evalflow.key;
+
+    # Security headers (Django adds HSTS itself when DJANGO_SSL_REDIRECT=True)
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" always;
+
+    client_max_body_size 25m;
+
+    # Static frontend
+    root /opt/evalflow/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # API and Django admin
+    location ~ ^/(api|django-admin)/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Uploaded files are never served from this server block directly;
+    # downloads go through the authenticated API endpoint only.
+}
+
+server {
+    listen 80;
+    server_name evalflow.example.local;
+    return 301 https://$host$request_uri;
+}
