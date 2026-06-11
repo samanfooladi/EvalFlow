@@ -16,6 +16,7 @@ backend/.env
 # Node
 node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Tooling
 .pytest_cache/
