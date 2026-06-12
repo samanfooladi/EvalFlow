@@ -4,6 +4,7 @@ import type {
   Assessment,
   ClauseAssessment,
   ClauseStatusValue,
+  SubClauseAssessment,
 } from "@/api/types";
 
 export function useAssessment(id: string) {
@@ -26,14 +27,9 @@ export function useClauseAssessments(id: string) {
 export function useUpdateClause(assessmentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...patch
-    }: {
-      id: number;
-      status?: ClauseStatusValue;
-      text?: string;
-    }) =>
+    // Only the document text is editable here; the verdict is derived from
+    // the sub-clauses server-side.
+    mutationFn: ({ id, ...patch }: { id: number; text?: string }) =>
       api
         .patch<ClauseAssessment>(`/clause-assessments/${id}/`, patch)
         .then((r) => r.data),
@@ -59,6 +55,65 @@ export function useResetClauseText(assessmentId: string) {
         ["clause-assessments", assessmentId],
         (old) => old?.map((ca) => (ca.id === updated.id ? updated : ca)),
       );
+    },
+  });
+}
+
+export function useUpdateSubClause(assessmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...patch
+    }: {
+      id: number;
+      status?: ClauseStatusValue;
+      notes?: string;
+    }) =>
+      api
+        .patch<SubClauseAssessment>(`/sub-clause-assessments/${id}/`, patch)
+        .then((r) => r.data),
+    // The parent verdict and default text are recomputed server-side, so
+    // refetch the whole clause list rather than patching the cache.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["clause-assessments", assessmentId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["assessment", assessmentId] });
+    },
+  });
+}
+
+export function useUploadEvidence(assessmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ subId, file }: { subId: number; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("sub_clause_assessment", String(subId));
+      return api.post(`/assessments/${assessmentId}/attachments/`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["clause-assessments", assessmentId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["attachments", assessmentId] });
+    },
+  });
+}
+
+export function useDeleteEvidence(assessmentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (attachmentId: number) =>
+      api.delete(`/attachments/${attachmentId}/`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["clause-assessments", assessmentId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["attachments", assessmentId] });
     },
   });
 }

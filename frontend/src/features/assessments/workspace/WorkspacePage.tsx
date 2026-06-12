@@ -45,7 +45,8 @@ export function WorkspacePage() {
   }
 
   const a = assessment.data;
-  const counts = a.status_counts;
+  // Header progress counts sub-clauses — the unit assessors actually review.
+  const counts = a.sub_status_counts;
   const done = counts.total - counts.unreviewed;
   const editable =
     a.status === "under_assessment" &&
