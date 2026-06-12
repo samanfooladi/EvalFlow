@@ -38,8 +38,8 @@ function TemplateEditor({ template }: { template: DefaultText }) {
   });
 
   return (
-    <div className="rounded-xl border border-surface-700 bg-surface-900 p-4">
-      <h3 className="mb-2 text-sm font-medium text-ink-300">
+    <div className="rounded-xl border border-surface-700 bg-surface-900 p-4 transition-colors hover:border-surface-600">
+      <h3 className="mb-2 text-sm font-semibold text-ink-200">
         {TEMPLATE_LABELS[template.status]}
       </h3>
       <Textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} />
@@ -71,12 +71,12 @@ function GuidanceEditor({ requirement }: { requirement: Requirement }) {
   });
 
   return (
-    <div className="rounded-lg border border-surface-700 p-3">
+    <div className="rounded-xl border border-surface-700 bg-surface-900 p-4 transition-colors hover:border-surface-600">
       <div className="mb-2 flex items-center gap-2 text-sm">
-        <span className="font-mono text-xs text-accent-400" dir="ltr">
+        <span className="rounded-md bg-accent-600/10 px-1.5 py-0.5 font-mono text-xs font-medium text-accent-400" dir="ltr">
           {requirement.code}
         </span>
-        <span className="text-ink-100">{requirement.title}</span>
+        <span className="font-medium text-ink-100">{requirement.title}</span>
         <Badge tone="neutral">{requirement.klass_title}</Badge>
       </div>
       <Textarea
@@ -138,13 +138,13 @@ export function FrameworksAdminPage() {
             onClick={() => setSelected(fw)}
             className={`rounded-xl border p-4 text-start transition-colors ${
               selected?.id === fw.id
-                ? "border-accent-500 bg-accent-600/10"
-                : "border-surface-700 bg-surface-900 hover:border-surface-600"
+                ? "border-accent-500 bg-accent-600/10 shadow-[inset_0_0_0_1px] shadow-accent-500/30"
+                : "border-surface-700 bg-surface-900 hover:border-accent-600/50 hover:bg-surface-800/40"
             }`}
           >
             <div className="flex items-center gap-2">
               <Badge tone={fw.kind === "TRP" ? "accent" : "warn"}>{fw.kind}</Badge>
-              <span className="font-medium text-ink-100">{fw.title}</span>
+              <span className="text-[15px] font-semibold text-ink-100">{fw.title}</span>
             </div>
             <div className="mt-1 text-xs text-ink-500 fa-nums">
               {fw.requirements_count} الزام · {fw.clauses_count} بند
@@ -156,13 +156,15 @@ export function FrameworksAdminPage() {
       {selected && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <section className="space-y-3">
-            <h2 className="text-sm font-medium text-ink-500">متن‌های پیش‌فرض</h2>
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-600">
+              متن‌های پیش‌فرض
+            </h2>
             {templates.data?.map((t) => (
               <TemplateEditor key={`${t.id}-${t.template.length}`} template={t} />
             ))}
           </section>
           <section>
-            <h2 className="mb-3 text-sm font-medium text-ink-500">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-600">
               راهنمای ارزیاب به تفکیک الزام
             </h2>
             <div className="max-h-[60vh] space-y-2 overflow-y-auto pe-2">

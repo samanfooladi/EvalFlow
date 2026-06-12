@@ -84,7 +84,7 @@ export function AuditPage() {
           </thead>
           <tbody className="divide-y divide-surface-800 bg-surface-900">
             {logs.data?.map((entry) => (
-              <tr key={entry.id}>
+              <tr key={entry.id} className="transition-colors hover:bg-surface-800/40">
                 <td className="whitespace-nowrap px-4 py-2.5 text-xs text-ink-500 fa-nums" dir="ltr">
                   {new Date(entry.created_at).toLocaleString("fa-IR")}
                 </td>

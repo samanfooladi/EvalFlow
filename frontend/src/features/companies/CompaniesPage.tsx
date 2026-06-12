@@ -125,23 +125,27 @@ export function CompaniesPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-3 text-sm font-medium text-ink-500">شرکت‌ها</h2>
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-600">
+            شرکت‌ها
+          </h2>
           {companies.data?.length === 0 && (
             <EmptyState>هنوز شرکتی ثبت نشده است.</EmptyState>
           )}
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {companies.data?.map((company) => (
               <li key={company.id}>
                 <button
                   onClick={() => setSelected(company)}
                   className={`w-full rounded-xl border p-4 text-start transition-colors ${
                     selected?.id === company.id
-                      ? "border-accent-500 bg-accent-600/10"
-                      : "border-surface-700 bg-surface-900 hover:border-surface-600"
+                      ? "border-accent-500 bg-accent-600/10 shadow-[inset_0_0_0_1px] shadow-accent-500/30"
+                      : "border-surface-700 bg-surface-900 hover:border-accent-600/50 hover:bg-surface-800/40"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-ink-100">{company.name}</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-[15px] font-semibold leading-6 text-ink-100">
+                      {company.name}
+                    </span>
                     <Badge tone="neutral">{company.systems_count} سامانه</Badge>
                   </div>
                   {company.name_en && (
@@ -157,7 +161,7 @@ export function CompaniesPage() {
 
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-ink-500">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-600">
               {selected ? `سامانه‌های ${selected.name}` : "سامانه‌ها"}
             </h2>
             {canWrite && selected && (
@@ -170,14 +174,16 @@ export function CompaniesPage() {
           {selected && systems.data?.length === 0 && (
             <EmptyState>برای این شرکت سامانه‌ای ثبت نشده است.</EmptyState>
           )}
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {systems.data?.map((system) => (
               <li
                 key={system.id}
-                className="rounded-xl border border-surface-700 bg-surface-900 p-4"
+                className="rounded-xl border border-surface-700 bg-surface-900 p-4 transition-colors hover:border-surface-600"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-ink-100">{system.name}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-[15px] font-semibold leading-6 text-ink-100">
+                    {system.name}
+                  </span>
                   {system.version && (
                     <Badge tone="accent">نسخه {system.version}</Badge>
                   )}

@@ -122,8 +122,8 @@ export function UsersPage() {
           </thead>
           <tbody className="divide-y divide-surface-800 bg-surface-900">
             {users.data?.map((u) => (
-              <tr key={u.id}>
-                <td className="px-4 py-3 text-ink-100">
+              <tr key={u.id} className="transition-colors hover:bg-surface-800/40">
+                <td className="px-4 py-3 text-[15px] font-medium text-ink-100">
                   {u.first_name ? `${u.first_name} ${u.last_name}` : "—"}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-ink-300" dir="ltr">
