@@ -12,7 +12,7 @@ const btnVariants = {
   primary:
     "bg-accent-600 hover:bg-accent-500 text-white shadow-sm disabled:bg-surface-600",
   ghost:
-    "bg-transparent hover:bg-surface-700 text-ink-300 border border-surface-600",
+    "bg-transparent hover:bg-surface-700 text-ink-300 border border-surface-600 hover:border-surface-500",
   danger: "bg-finding-500/90 hover:bg-finding-500 text-white",
 } as const;
 
@@ -25,7 +25,7 @@ export function Button({
 }) {
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${btnVariants[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500/70 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0 ${btnVariants[variant]} ${className}`}
       {...props}
     />
   );

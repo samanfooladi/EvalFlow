@@ -165,46 +165,59 @@ export function AssessmentsPage() {
 
       <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {assessments.data?.map((a) => {
-          const done = a.status_counts.total - a.status_counts.unreviewed;
-          const progress =
-            a.status_counts.total > 0
-              ? Math.round((100 * done) / a.status_counts.total)
-              : 0;
+          // Progress counts sub-clauses — same unit as the workspace.
+          const counts = a.sub_status_counts;
+          const done = counts.total - counts.unreviewed;
+          const pct = (n: number) =>
+            counts.total > 0 ? (100 * n) / counts.total : 0;
           return (
             <li key={a.id}>
               <Link
                 to={`/assessments/${a.id}`}
-                className="block rounded-2xl border border-surface-700 bg-surface-900 p-5 transition-colors hover:border-accent-600/60"
+                className="block rounded-xl border border-surface-700 bg-surface-900 p-5 transition-colors hover:border-accent-600/50 hover:bg-surface-800/40"
               >
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-bold text-ink-100">{a.system_name}</div>
-                    <div className="mt-0.5 text-xs text-ink-500">{a.company_name}</div>
+                <div className="mb-4 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-[15px] font-semibold leading-6 text-ink-100">
+                      {a.system_name}
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-ink-500">
+                      {a.company_name}
+                    </div>
                   </div>
                   <Badge tone={a.kind === "TRP" ? "accent" : "warn"}>{a.kind}</Badge>
                 </div>
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-4 flex flex-wrap items-center gap-2">
                   <Badge tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Badge>
-                  {a.status_counts.finding > 0 && (
-                    <Badge tone="finding">{a.status_counts.finding} عدم انطباق</Badge>
+                  {counts.finding > 0 && (
+                    <Badge tone="finding">{counts.finding} عدم انطباق</Badge>
                   )}
                 </div>
                 <div className="mb-1.5 flex items-center justify-between text-xs text-ink-500">
                   <span>پیشرفت بررسی</span>
                   <span className="fa-nums">
-                    {done} از {a.status_counts.total}
+                    {done} از {counts.total}
                   </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-surface-700">
+                {/* Stacked bar: compliant / N-A / finding segments */}
+                <div className="flex h-1.5 overflow-hidden rounded-full bg-surface-700">
                   <div
-                    className="h-full rounded-full bg-accent-500 transition-all"
-                    style={{ width: `${progress}%` }}
+                    className="h-full bg-compliant-500 transition-all"
+                    style={{ width: `${pct(counts.compliant)}%` }}
+                  />
+                  <div
+                    className="h-full bg-na-400 transition-all"
+                    style={{ width: `${pct(counts.not_applicable)}%` }}
+                  />
+                  <div
+                    className="h-full bg-finding-500 transition-all"
+                    style={{ width: `${pct(counts.finding)}%` }}
                   />
                 </div>
-                <div className="mt-3 text-xs text-ink-600">
-                  ارزیاب: {a.assessor_name}
+                <div className="mt-4 flex items-center justify-between border-t border-surface-800 pt-3 text-xs text-ink-600">
+                  <span>ارزیاب: {a.assessor_name}</span>
                   {a.compliance_percent != null && (
-                    <span className="ms-3">انطباق: {a.compliance_percent}٪</span>
+                    <span className="fa-nums">انطباق: {a.compliance_percent}٪</span>
                   )}
                 </div>
               </Link>
