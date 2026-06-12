@@ -43,14 +43,17 @@ class IsAssignedOrElevated(BasePermission):
     """Object-level check: assessors/reviewers may only touch assessments
     they are assigned to; Admin and QA Lead bypass.
 
-    The object must expose ``assessor_id`` and ``reviewer_id`` (Assessment)
-    or an ``assessment`` relation (ClauseAssessment, Attachment).
+    The object must expose ``assessor_id`` and ``reviewer_id`` (Assessment),
+    an ``assessment`` relation (ClauseAssessment, Attachment), or a
+    ``clause_assessment`` relation (SubClauseAssessment).
     """
 
     def has_object_permission(self, request, view, obj):
         user = request.user
         if user.is_elevated:
             return True
+        if hasattr(obj, "clause_assessment"):
+            obj = obj.clause_assessment
         assessment = getattr(obj, "assessment", obj)
         if user.role == Role.ASSESSOR:
             return assessment.assessor_id == user.id

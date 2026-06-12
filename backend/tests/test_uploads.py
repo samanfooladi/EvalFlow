@@ -8,7 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.assessments.models import Assessment
 from apps.catalog.models import Company, ProductSystem
-from apps.frameworks.models import Framework
+from apps.frameworks.models import Clause, Framework, Requirement, SubClause
 
 from .factories import AssessorFactory, ReviewerFactory
 
@@ -25,12 +25,21 @@ EXE_BYTES = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00"
 @pytest.fixture
 def assessment(db):
     fw = Framework.objects.create(code="up-fw", title="t", kind="TRP")
+    req = Requirement.objects.create(
+        framework=fw, klass_title="کلاس", code="UP.1", title="الزام", order=1
+    )
+    clause = Clause.objects.create(
+        requirement=req, code="UP.1.1", title="بند", description="شرح", order=1
+    )
+    SubClause.objects.create(clause=clause, text="شرح", order=0)
     company = Company.objects.create(name="شرکت بارگذاری")
     system = ProductSystem.objects.create(company=company, name="سامانه")
-    return Assessment.objects.create(
+    a = Assessment.objects.create(
         system=system, framework=fw, assessor=AssessorFactory(),
         reviewer=ReviewerFactory(),
     )
+    a.create_clause_assessments()
+    return a
 
 
 def upload(api, assessment, name, content, content_type="application/octet-stream"):
@@ -119,6 +128,42 @@ def test_download_forces_attachment(api, as_user, assessment):
     assert "attachment" in r["Content-Disposition"]
     assert r["Content-Type"] == "application/octet-stream"
     assert r["X-Content-Type-Options"] == "nosniff"
+
+
+def test_sub_clause_evidence_upload(api, as_user, assessment):
+    sub = assessment.clause_assessments.first().sub_assessments.first()
+    as_user(assessment.assessor)
+    r = api.post(
+        f"/api/v1/assessments/{assessment.pk}/attachments/",
+        {
+            "file": SimpleUploadedFile("evidence.png", PNG_BYTES, "image/png"),
+            "sub_clause_assessment": sub.pk,
+        },
+        format="multipart",
+    )
+    assert r.status_code == 201, r.content
+    assert r.data["sub_clause_assessment"] == sub.pk
+    assert sub.attachments.count() == 1
+
+
+def test_evidence_cannot_attach_to_other_assessments_sub(api, as_user, assessment):
+    """The sub-clause must belong to the same assessment (no cross-attach)."""
+    other = Assessment.objects.create(
+        system=assessment.system, framework=assessment.framework,
+        assessor=assessment.assessor,
+    )
+    other.create_clause_assessments()
+    foreign_sub = other.clause_assessments.first().sub_assessments.first()
+    as_user(assessment.assessor)
+    r = api.post(
+        f"/api/v1/assessments/{assessment.pk}/attachments/",
+        {
+            "file": SimpleUploadedFile("evidence.png", PNG_BYTES, "image/png"),
+            "sub_clause_assessment": foreign_sub.pk,
+        },
+        format="multipart",
+    )
+    assert r.status_code == 400
 
 
 def test_upload_audited(api, as_user, assessment):

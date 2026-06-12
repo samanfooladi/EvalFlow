@@ -13,12 +13,19 @@ from apps.accounts.permissions import (
 )
 from apps.audit.services import log_event
 
-from .models import Assessment, AssessmentStatus, Attachment, ClauseAssessment
+from .models import (
+    Assessment,
+    AssessmentStatus,
+    Attachment,
+    ClauseAssessment,
+    SubClauseAssessment,
+)
 from .serializers import (
     AssessmentSerializer,
     AssessmentUpdateSerializer,
     AttachmentSerializer,
     ClauseAssessmentSerializer,
+    SubClauseAssessmentSerializer,
 )
 from .transitions import transition
 
@@ -109,7 +116,7 @@ class AssessmentViewSet(viewsets.ModelViewSet):
         assessment = self.get_object()
         qs = assessment.clause_assessments.select_related(
             "clause", "clause__requirement"
-        )
+        ).prefetch_related("sub_assessments__sub_clause", "sub_assessments__attachments")
         params = request.query_params
         if status_param := params.get("status"):
             qs = qs.filter(status=status_param)
@@ -133,6 +140,9 @@ class AssessmentViewSet(viewsets.ModelViewSet):
             data=request.data, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
+        sub = serializer.validated_data.get("sub_clause_assessment")
+        if sub is not None and sub.clause_assessment.assessment_id != assessment.pk:
+            raise ValidationError({"sub_clause_assessment": "بند متعلق به این ارزیابی نیست."})
         attachment = serializer.save(assessment=assessment)
         log_event(request, action="upload", model="assessments.Attachment",
                   object_id=str(attachment.pk), object_repr=attachment.original_name)
@@ -199,6 +209,59 @@ class ClauseAssessmentViewSet(
                   object_id=str(ca.pk), object_repr=str(ca),
                   changes={"text": "reset_to_default"})
         return Response(ClauseAssessmentSerializer(ca).data)
+
+
+class SubClauseAssessmentViewSet(
+    mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet
+):
+    """PATCH status/notes on a single sub-clause. The parent ClauseAssessment
+    verdict is recomputed automatically after every change."""
+
+    serializer_class = SubClauseAssessmentSerializer
+    permission_classes = [RolePermission, IsAssignedOrElevated]
+    allowed_roles = {
+        "retrieve": ALL_ROLES,
+        "update": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
+        "partial_update": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
+    }
+
+    def get_queryset(self):
+        qs = SubClauseAssessment.objects.select_related(
+            "sub_clause",
+            "clause_assessment",
+            "clause_assessment__assessment",
+            "clause_assessment__clause",
+        )
+        user = self.request.user
+        if user.is_elevated:
+            return qs
+        if user.role == Role.ASSESSOR:
+            return qs.filter(clause_assessment__assessment__assessor=user)
+        if user.role == Role.REVIEWER:
+            return qs.filter(clause_assessment__assessment__reviewer=user)
+        return qs.none()
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if (
+            instance.clause_assessment.assessment.status
+            != AssessmentStatus.UNDER_ASSESSMENT
+        ):
+            raise PermissionDenied(
+                "بندها فقط در وضعیت «در حال ارزیابی» قابل ویرایش هستند."
+            )
+        old_status = instance.status
+        instance = serializer.save(updated_by=self.request.user)
+        if instance.status != old_status:
+            instance.clause_assessment.recompute_status(user=self.request.user)
+            log_event(self.request, action="status_change",
+                      model="assessments.SubClauseAssessment",
+                      object_id=str(instance.pk), object_repr=str(instance),
+                      changes={"status": [old_status, instance.status]})
+        else:
+            log_event(self.request, action="update",
+                      model="assessments.SubClauseAssessment",
+                      object_id=str(instance.pk), object_repr=str(instance))
 
 
 class AttachmentViewSet(

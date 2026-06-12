@@ -10,6 +10,7 @@ from apps.frameworks.models import (
     DefaultTextTemplate,
     Framework,
     Requirement,
+    SubClause,
 )
 
 from .factories import (
@@ -30,10 +31,14 @@ def setup(db):
         title="الزام نمونه", guidance="راهنما", order=1,
     )
     for i in (1, 2, 3):
-        Clause.objects.create(
+        clause = Clause.objects.create(
             requirement=req, code=f"REQ.1.{i}", title=f"بند {i}",
             description=f"شرح بند {i}", objective="هدف", order=i,
         )
+        # REQ.1.1 is multi-item (2 sub-clauses); the rest single-item.
+        SubClause.objects.create(clause=clause, text=f"بند فرعی {i}-۱", order=0)
+        if i == 1:
+            SubClause.objects.create(clause=clause, text="بند فرعی ۱-۲", order=1)
     DefaultTextTemplate.objects.create(
         framework=fw, status="finding",
         template="عدم انطباق در {{clause_code}}: ",
@@ -227,45 +232,91 @@ def test_clause_list_with_status_filter(api, as_user, setup):
     assert r.data[0]["guidance"] == "راهنما"
 
 
-def test_clause_status_change_renders_default_text(api, as_user, setup):
+def test_sub_clause_status_rolls_up_and_renders_default_text(api, as_user, setup):
     a = setup["assessment"]
-    ca = a.clause_assessments.first()
+    ca = a.clause_assessments.get(clause__code="REQ.1.2")  # single sub-clause
+    sub = ca.sub_assessments.first()
+    as_user(setup["assessor"])
+    r = api.patch(
+        f"/api/v1/sub-clause-assessments/{sub.pk}/",
+        {"status": "finding", "notes": "شرح یافته"}, format="json",
+    )
+    assert r.status_code == 200
+    assert r.data["notes"] == "شرح یافته"
+    ca.refresh_from_db()
+    assert ca.status == ClauseStatus.FINDING  # derived
+    assert ca.text.startswith("عدم انطباق در REQ.1.2")
+
+
+def test_partial_rollup_via_api(api, as_user, setup):
+    """REQ.1.1 has two sub-clauses; the parent verdict follows them."""
+    a = setup["assessment"]
+    ca = a.clause_assessments.get(clause__code="REQ.1.1")
+    s1, s2 = list(ca.sub_assessments.all())
+    as_user(setup["assessor"])
+    api.patch(f"/api/v1/sub-clause-assessments/{s1.pk}/",
+              {"status": "compliant"}, format="json")
+    ca.refresh_from_db()
+    assert ca.status == ClauseStatus.UNREVIEWED  # one sub still open
+    api.patch(f"/api/v1/sub-clause-assessments/{s2.pk}/",
+              {"status": "finding"}, format="json")
+    ca.refresh_from_db()
+    assert ca.status == ClauseStatus.FINDING
+
+
+def test_parent_status_is_read_only(api, as_user, setup):
+    ca = setup["assessment"].clause_assessments.first()
     as_user(setup["assessor"])
     r = api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
-        {"status": "finding"}, format="json",
+        {"status": "compliant"}, format="json",
     )
+    assert r.status_code == 200  # ignored, not an error
+    ca.refresh_from_db()
+    assert ca.status == ClauseStatus.UNREVIEWED
+
+
+def test_clause_list_includes_nested_sub_assessments(api, as_user, setup):
+    a = setup["assessment"]
+    as_user(setup["assessor"])
+    r = api.get(f"/api/v1/assessments/{a.pk}/clause-assessments/")
     assert r.status_code == 200
-    assert r.data["text"].startswith("عدم انطباق در REQ.1.1")
+    by_code = {row["clause_code"]: row for row in r.data}
+    assert len(by_code["REQ.1.1"]["sub_assessments"]) == 2
+    assert len(by_code["REQ.1.2"]["sub_assessments"]) == 1
+    assert by_code["REQ.1.1"]["sub_assessments"][0]["sub_clause_text"]
 
 
 def test_clause_text_edit_marks_edited_and_persists(api, as_user, setup):
     a = setup["assessment"]
-    ca = a.clause_assessments.first()
+    ca = a.clause_assessments.get(clause__code="REQ.1.2")
     as_user(setup["assessor"])
     api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
-        {"status": "finding", "text": "متن سفارشی ارزیاب"}, format="json",
+        {"text": "متن سفارشی ارزیاب"}, format="json",
     )
     ca.refresh_from_db()
     assert ca.text == "متن سفارشی ارزیاب"
     assert ca.text_edited is True
-    # later status change must not clobber the custom text
-    api.patch(
-        f"/api/v1/clause-assessments/{ca.pk}/",
-        {"status": "compliant"}, format="json",
-    )
+    # a later sub-status change (rollup) must not clobber the custom text
+    sub = ca.sub_assessments.first()
+    api.patch(f"/api/v1/sub-clause-assessments/{sub.pk}/",
+              {"status": "compliant"}, format="json")
     ca.refresh_from_db()
+    assert ca.status == ClauseStatus.COMPLIANT
     assert ca.text == "متن سفارشی ارزیاب"
 
 
 def test_clause_reset_text(api, as_user, setup):
     a = setup["assessment"]
-    ca = a.clause_assessments.first()
+    ca = a.clause_assessments.get(clause__code="REQ.1.2")
+    sub = ca.sub_assessments.first()
     as_user(setup["assessor"])
+    api.patch(f"/api/v1/sub-clause-assessments/{sub.pk}/",
+              {"status": "finding"}, format="json")
     api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
-        {"status": "finding", "text": "دست‌نویس"}, format="json",
+        {"text": "دست‌نویس"}, format="json",
     )
     r = api.post(f"/api/v1/clause-assessments/{ca.pk}/reset-text/")
     assert r.status_code == 200
@@ -278,9 +329,15 @@ def test_clause_locked_outside_under_assessment(api, as_user, setup):
     a.status = AssessmentStatus.UNDER_REVIEW
     a.save()
     ca = a.clause_assessments.first()
+    sub = ca.sub_assessments.first()
     as_user(setup["assessor"])
     r = api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
+        {"text": "تغییر"}, format="json",
+    )
+    assert r.status_code == 403
+    r = api.patch(
+        f"/api/v1/sub-clause-assessments/{sub.pk}/",
         {"status": "compliant"}, format="json",
     )
     assert r.status_code == 403
@@ -288,9 +345,15 @@ def test_clause_locked_outside_under_assessment(api, as_user, setup):
 
 def test_reviewer_cannot_patch_clauses(api, as_user, setup):
     ca = setup["assessment"].clause_assessments.first()
+    sub = ca.sub_assessments.first()
     as_user(setup["reviewer"])
     r = api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
+        {"text": "تغییر"}, format="json",
+    )
+    assert r.status_code == 403
+    r = api.patch(
+        f"/api/v1/sub-clause-assessments/{sub.pk}/",
         {"status": "compliant"}, format="json",
     )
     assert r.status_code == 403
@@ -300,8 +363,14 @@ def test_idor_clause_assessment_of_other_assessor_404(api, as_user, setup):
     other = AssessorFactory()
     as_user(other)
     ca = setup["assessment"].clause_assessments.first()
+    sub = ca.sub_assessments.first()
     r = api.patch(
         f"/api/v1/clause-assessments/{ca.pk}/",
+        {"text": "نفوذ"}, format="json",
+    )
+    assert r.status_code == 404
+    r = api.patch(
+        f"/api/v1/sub-clause-assessments/{sub.pk}/",
         {"status": "compliant"}, format="json",
     )
     assert r.status_code == 404

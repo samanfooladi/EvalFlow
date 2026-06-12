@@ -6,7 +6,13 @@ from django.db import models
 from django.db.models import Count, Q
 
 from apps.catalog.models import ProductSystem
-from apps.frameworks.models import Clause, ClauseStatus, Framework, FrameworkKind
+from apps.frameworks.models import (
+    Clause,
+    ClauseStatus,
+    Framework,
+    FrameworkKind,
+    SubClause,
+)
 
 
 class AssessmentStatus(models.TextChoices):
@@ -68,7 +74,8 @@ class Assessment(models.Model):
         super().save(*args, **kwargs)
 
     def create_clause_assessments(self):
-        """Fan out one ClauseAssessment per framework clause (idempotent)."""
+        """Fan out one ClauseAssessment per framework clause and one
+        SubClauseAssessment per sub-clause (idempotent)."""
         existing = set(
             self.clause_assessments.values_list("clause_id", flat=True)
         )
@@ -78,9 +85,33 @@ class Assessment(models.Model):
         ClauseAssessment.objects.bulk_create(
             ClauseAssessment(assessment=self, clause=clause) for clause in missing
         )
+        existing_subs = set(
+            SubClauseAssessment.objects.filter(
+                clause_assessment__assessment=self
+            ).values_list("clause_assessment_id", "sub_clause_id")
+        )
+        SubClauseAssessment.objects.bulk_create(
+            SubClauseAssessment(clause_assessment=ca, sub_clause=sub)
+            for ca in self.clause_assessments.prefetch_related("clause__sub_clauses")
+            for sub in ca.clause.sub_clauses.all()
+            if (ca.pk, sub.pk) not in existing_subs
+        )
 
     def status_counts(self) -> dict:
         agg = self.clause_assessments.aggregate(
+            total=Count("id"),
+            compliant=Count("id", filter=Q(status=ClauseStatus.COMPLIANT)),
+            finding=Count("id", filter=Q(status=ClauseStatus.FINDING)),
+            not_applicable=Count("id", filter=Q(status=ClauseStatus.NOT_APPLICABLE)),
+            unreviewed=Count("id", filter=Q(status=ClauseStatus.UNREVIEWED)),
+        )
+        return agg
+
+    def sub_status_counts(self) -> dict:
+        """Sub-clause-level counts — drives the workspace sidebar filters."""
+        agg = SubClauseAssessment.objects.filter(
+            clause_assessment__assessment=self
+        ).aggregate(
             total=Count("id"),
             compliant=Count("id", filter=Q(status=ClauseStatus.COMPLIANT)),
             finding=Count("id", filter=Q(status=ClauseStatus.FINDING)),
@@ -153,6 +184,56 @@ class ClauseAssessment(models.Model):
         self.updated_by = user
         self.save()
 
+    def recompute_status(self, user=None) -> bool:
+        """Derive the clause verdict from its sub-clauses: any finding wins,
+        then any unreviewed, then all-N/A, otherwise compliant. Returns True
+        if the status changed."""
+        statuses = set(self.sub_assessments.values_list("status", flat=True))
+        if not statuses:
+            return False
+        if ClauseStatus.FINDING in statuses:
+            new_status = ClauseStatus.FINDING
+        elif ClauseStatus.UNREVIEWED in statuses:
+            new_status = ClauseStatus.UNREVIEWED
+        elif statuses == {ClauseStatus.NOT_APPLICABLE}:
+            new_status = ClauseStatus.NOT_APPLICABLE
+        else:
+            new_status = ClauseStatus.COMPLIANT
+        if new_status == self.status:
+            return False
+        self.apply_status(new_status, user=user)
+        return True
+
+
+class SubClauseAssessment(models.Model):
+    """Verdict + notes for one sub-clause within an assessment. The parent
+    ClauseAssessment status is derived from these (recompute_status)."""
+
+    clause_assessment = models.ForeignKey(
+        ClauseAssessment, on_delete=models.CASCADE, related_name="sub_assessments"
+    )
+    sub_clause = models.ForeignKey(SubClause, on_delete=models.PROTECT, related_name="+")
+    status = models.CharField(
+        max_length=16, choices=ClauseStatus.choices, default=ClauseStatus.UNREVIEWED
+    )
+    notes = models.TextField(blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sub_clause__order", "sub_clause_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clause_assessment", "sub_clause"],
+                name="uniq_subclause_per_clause_assessment",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.clause_assessment.clause.code}#{self.sub_clause.order} [{self.status}]"
+
 
 def attachment_upload_path(instance, filename):
     # Random name: never trust/expose the client-supplied filename on disk.
@@ -163,6 +244,14 @@ def attachment_upload_path(instance, filename):
 class Attachment(models.Model):
     assessment = models.ForeignKey(
         Assessment, on_delete=models.CASCADE, related_name="attachments"
+    )
+    # Evidence for a specific sub-clause; null = assessment-level attachment.
+    sub_clause_assessment = models.ForeignKey(
+        SubClauseAssessment,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="attachments",
     )
     file = models.FileField(upload_to=attachment_upload_path, max_length=255)
     original_name = models.CharField(max_length=255)
