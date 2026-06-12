@@ -82,6 +82,30 @@ class Clause(models.Model):
         return f"{self.code} {self.title}"
 
 
+class SubClause(models.Model):
+    """A single assessable item inside a clause — e.g. one audit-event bullet
+    of FAU_GEN.1.1. Each receives its own verdict/notes/evidence per
+    assessment. Identified by (clause, order); existing single-text clauses
+    are migrated into one sub-clause holding the original text."""
+
+    clause = models.ForeignKey(
+        Clause, on_delete=models.CASCADE, related_name="sub_clauses"
+    )
+    text = models.TextField("متن بند")
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["clause", "order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clause", "order"], name="uniq_subclause_order"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.clause.code}#{self.order}"
+
+
 class DefaultTextTemplate(models.Model):
     """Status-driven default text for the تشریح آزمون field. Rendered with
     plain placeholder substitution (never a template engine — users are

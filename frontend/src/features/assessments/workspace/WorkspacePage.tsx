@@ -45,7 +45,8 @@ export function WorkspacePage() {
   }
 
   const a = assessment.data;
-  const counts = a.status_counts;
+  // Header progress counts sub-clauses — the unit assessors actually review.
+  const counts = a.sub_status_counts;
   const done = counts.total - counts.unreviewed;
   const editable =
     a.status === "under_assessment" &&
@@ -98,7 +99,7 @@ export function WorkspacePage() {
               →
             </Link>
             <div>
-              <h1 className="font-bold text-ink-100">
+              <h1 className="text-lg font-bold leading-6 text-ink-100">
                 {a.system_name}
                 <span className="ms-2 text-sm font-normal text-ink-500">
                   {a.company_name}
@@ -122,32 +123,49 @@ export function WorkspacePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => setShowAttachments((v) => !v)}>
-              مستندات
-            </Button>
             <Button
               variant="ghost"
-              onClick={() => void exportDoc(a.kind === "TRP" ? "trp" : "vtr")}
+              onClick={() => setShowAttachments((v) => !v)}
+              className={
+                showAttachments
+                  ? "border-accent-500/60 bg-accent-600/10 text-accent-400"
+                  : ""
+              }
+              aria-pressed={showAttachments}
             >
-              خروجی {a.kind}
+              مستندات
             </Button>
-            <Button variant="ghost" onClick={() => void exportDoc("brp")}>
-              خروجی BRP
-            </Button>
-            {transitions.map((t) => (
+
+            <div className="flex items-center gap-2 border-s border-surface-700 ps-2">
               <Button
-                key={t.to}
-                variant={t.variant}
-                disabled={transitionMutation.isPending}
-                onClick={() =>
-                  transitionMutation.mutate(t.to, {
-                    onError: (err) => setBanner(apiErrorMessage(err)),
-                  })
-                }
+                variant="ghost"
+                onClick={() => void exportDoc(a.kind === "TRP" ? "trp" : "vtr")}
               >
-                {t.label}
+                خروجی {a.kind}
               </Button>
-            ))}
+              <Button variant="ghost" onClick={() => void exportDoc("brp")}>
+                خروجی BRP
+              </Button>
+            </div>
+
+            {transitions.length > 0 && (
+              <div className="flex items-center gap-2 border-s border-surface-700 ps-2">
+                {transitions.map((t) => (
+                  <Button
+                    key={t.to}
+                    variant={t.variant}
+                    disabled={transitionMutation.isPending}
+                    onClick={() =>
+                      transitionMutation.mutate(t.to, {
+                        onError: (err) => setBanner(apiErrorMessage(err)),
+                      })
+                    }
+                  >
+                    {t.label}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         {banner && (

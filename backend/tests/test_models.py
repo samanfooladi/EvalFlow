@@ -10,6 +10,7 @@ from apps.frameworks.models import (
     DefaultTextTemplate,
     Framework,
     Requirement,
+    SubClause,
 )
 
 from .factories import AssessorFactory
@@ -24,14 +25,18 @@ def framework(db):
         framework=fw, klass_title="کلاس ممیزی امنیت", code="FAU_GEN.1",
         title="تولید داده ممیزی", guidance="راهنمای آزمون این الزام", order=1,
     )
-    Clause.objects.create(
+    c1 = Clause.objects.create(
         requirement=req, code="FAU_GEN.1.1", title="تولید داده ممیزی 1",
         description="FAU_GEN.1.1 (الزام اول)", objective="محصول باید ...", order=1,
     )
-    Clause.objects.create(
+    # Multi-item clause: two independently assessable sub-clauses.
+    SubClause.objects.create(clause=c1, text="ورود و خروج کاربر", order=0)
+    SubClause.objects.create(clause=c1, text="خواندن رکوردهای ممیزی", order=1)
+    c2 = Clause.objects.create(
         requirement=req, code="FAU_GEN.1.2", title="تولید داده ممیزی 2",
         description="FAU_GEN.1.2 (الزام دوم)", objective="محصول باید ...", order=2,
     )
+    SubClause.objects.create(clause=c2, text=c2.description, order=0)
     DefaultTextTemplate.objects.create(
         framework=fw, status="compliant",
         template="آزمون {{clause_code}} روی {{product_name}} انجام شد و قبول است.",
@@ -61,9 +66,50 @@ def test_clause_assessment_fanout(assessment):
     assert set(
         assessment.clause_assessments.values_list("status", flat=True)
     ) == {ClauseStatus.UNREVIEWED}
+    # one SubClauseAssessment per sub-clause: 2 + 1
+    counts = assessment.sub_status_counts()
+    assert counts["total"] == 3 and counts["unreviewed"] == 3
     # idempotent
     assessment.create_clause_assessments()
     assert assessment.clause_assessments.count() == 2
+    assert assessment.sub_status_counts()["total"] == 3
+
+
+def test_clause_status_rollup(assessment):
+    """Parent verdict derives from sub-clauses: finding > unreviewed >
+    all-N/A > compliant."""
+    ca = assessment.clause_assessments.get(clause__code="FAU_GEN.1.1")
+    s1, s2 = list(ca.sub_assessments.all())
+
+    s1.status = ClauseStatus.COMPLIANT
+    s1.save()
+    ca.recompute_status()
+    assert ca.status == ClauseStatus.UNREVIEWED  # s2 still unreviewed
+
+    s2.status = ClauseStatus.FINDING
+    s2.save()
+    ca.recompute_status()
+    assert ca.status == ClauseStatus.FINDING  # any finding wins
+
+    s2.status = ClauseStatus.NOT_APPLICABLE
+    s2.save()
+    ca.recompute_status()
+    assert ca.status == ClauseStatus.COMPLIANT  # compliant + N/A
+
+    s1.status = ClauseStatus.NOT_APPLICABLE
+    s1.save()
+    ca.recompute_status()
+    assert ca.status == ClauseStatus.NOT_APPLICABLE  # all N/A
+
+
+def test_rollup_renders_default_text(assessment):
+    ca = assessment.clause_assessments.get(clause__code="FAU_GEN.1.2")
+    sub = ca.sub_assessments.first()
+    sub.status = ClauseStatus.COMPLIANT
+    sub.save()
+    ca.recompute_status()
+    assert ca.status == ClauseStatus.COMPLIANT
+    assert "FAU_GEN.1.2" in ca.text  # default text rendered on derivation
 
 
 def test_assessment_kind_denormalized(assessment):
@@ -123,10 +169,14 @@ def test_load_frameworks_command(db):
     assert Clause.objects.filter(requirement__framework=trp).count() >= 75
     assert vtr.requirements.count() == 13
     assert trp.default_texts.count() == 3
+    # every clause gets at least one sub-clause
+    assert not Clause.objects.filter(sub_clauses__isnull=True).exists()
     # idempotent re-run does not duplicate
     n_before = Clause.objects.count()
+    n_sub_before = SubClause.objects.count()
     call_command("load_frameworks")
     assert Clause.objects.count() == n_before
+    assert SubClause.objects.count() == n_sub_before
     # spot-check Persian content survived the round trip
     clause = Clause.objects.get(
         requirement__framework=trp, code="FAU_GEN.1.1"

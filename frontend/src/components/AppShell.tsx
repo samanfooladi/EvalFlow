@@ -14,15 +14,23 @@ function NavItem({ to, label, end }: { to: string; label: string; end?: boolean 
       to={to}
       end={end}
       className={({ isActive }) =>
-        `block rounded-lg px-3 py-2 text-sm transition-colors ${
+        `block rounded-lg border-s-2 px-3 py-2 text-sm transition-colors ${
           isActive
-            ? "bg-accent-600/15 font-medium text-accent-400"
-            : "text-ink-300 hover:bg-surface-800 hover:text-ink-100"
+            ? "border-accent-400 bg-accent-600/10 font-medium text-accent-400"
+            : "border-transparent text-ink-300 hover:bg-surface-800 hover:text-ink-100"
         }`
       }
     >
       {label}
     </NavLink>
+  );
+}
+
+function NavSection({ children }: { children: string }) {
+  return (
+    <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-600">
+      {children}
+    </div>
   );
 }
 
@@ -43,9 +51,16 @@ export function AppShell() {
         <nav className="flex-1 space-y-1 p-3">
           <NavItem to="/" label="ارزیابی‌ها" end />
           <NavItem to="/companies" label="شرکت‌ها و سامانه‌ها" />
-          {hasRole("admin") && <NavItem to="/admin/frameworks" label="چارچوب‌های الزامات" />}
-          {hasRole("admin", "qa_lead") && <NavItem to="/admin/users" label="کاربران" />}
-          {hasRole("admin", "qa_lead") && <NavItem to="/admin/audit" label="گزارش رویدادها" />}
+          {hasRole("admin", "qa_lead") && (
+            <>
+              <NavSection>مدیریت</NavSection>
+              {hasRole("admin") && (
+                <NavItem to="/admin/frameworks" label="چارچوب‌های الزامات" />
+              )}
+              <NavItem to="/admin/users" label="کاربران" />
+              <NavItem to="/admin/audit" label="گزارش رویدادها" />
+            </>
+          )}
         </nav>
         <div className="border-t border-surface-800 p-4">
           <div className="mb-3 flex items-center gap-3">

@@ -77,8 +77,29 @@ export interface Assessment {
   doc_version: string;
   change_log: { version: string; date: string; description: string }[];
   status_counts: StatusCounts;
+  sub_status_counts: StatusCounts;
   compliance_percent: number | null;
   created_at: string;
+  updated_at: string;
+}
+
+export interface AttachmentInfo {
+  id: number;
+  original_name: string;
+  size: number;
+  uploaded_at: string;
+  sub_clause_assessment?: number | null;
+}
+
+export interface SubClauseAssessment {
+  id: number;
+  clause_assessment: number;
+  sub_clause: number;
+  sub_clause_text: string;
+  sub_clause_order: number;
+  status: ClauseStatusValue;
+  notes: string;
+  attachments: AttachmentInfo[];
   updated_at: string;
 }
 
@@ -97,6 +118,7 @@ export interface ClauseAssessment {
   status: ClauseStatusValue;
   text: string;
   text_edited: boolean;
+  sub_assessments: SubClauseAssessment[];
   updated_at: string;
 }
 

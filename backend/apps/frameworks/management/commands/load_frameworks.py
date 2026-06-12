@@ -14,6 +14,7 @@ from apps.frameworks.models import (
     DefaultTextTemplate,
     Framework,
     Requirement,
+    SubClause,
 )
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent.parent / "fixtures"
@@ -64,7 +65,7 @@ class Command(BaseCommand):
             )
             n_req += 1
             for cl_data in req_data.get("clauses", []):
-                Clause.objects.update_or_create(
+                clause, _ = Clause.objects.update_or_create(
                     requirement=requirement,
                     code=cl_data["code"],
                     defaults={
@@ -75,6 +76,19 @@ class Command(BaseCommand):
                     },
                 )
                 n_cl += 1
+                sub_items = cl_data.get("sub_clauses")
+                if sub_items:
+                    for i, sub in enumerate(sub_items):
+                        SubClause.objects.update_or_create(
+                            clause=clause,
+                            order=sub.get("order", i),
+                            defaults={"text": sub["text"]},
+                        )
+                elif not clause.sub_clauses.exists():
+                    # Single-item clause: one sub-clause carrying the text.
+                    SubClause.objects.create(
+                        clause=clause, text=clause.description, order=0
+                    )
         self.stdout.write(
             f"  {framework.code}: {n_req} requirements, {n_cl} clauses"
         )

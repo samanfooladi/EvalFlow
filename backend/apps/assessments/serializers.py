@@ -7,7 +7,12 @@ from rest_framework import serializers
 from apps.accounts.models import Role, User
 from apps.frameworks.models import ClauseStatus
 
-from .models import Assessment, Attachment, ClauseAssessment
+from .models import (
+    Assessment,
+    Attachment,
+    ClauseAssessment,
+    SubClauseAssessment,
+)
 
 # Extension -> acceptable MIME types from content sniffing. A mismatch
 # (e.g. an .exe renamed to .pdf) is rejected.
@@ -39,6 +44,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
         source="reviewer.username", read_only=True, default=None
     )
     status_counts = serializers.SerializerMethodField()
+    sub_status_counts = serializers.SerializerMethodField()
     compliance_percent = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
@@ -48,14 +54,17 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "framework_title", "kind", "status", "assessor", "assessor_name",
             "reviewer", "reviewer_name", "tester_code", "approver_code",
             "test_completed_date", "architecture_overview", "test_configuration",
-            "doc_version", "change_log", "status_counts", "compliance_percent",
-            "created_at", "updated_at",
+            "doc_version", "change_log", "status_counts", "sub_status_counts",
+            "compliance_percent", "created_at", "updated_at",
         ]
         # status only changes through the transition endpoint.
         read_only_fields = ["kind", "status", "created_at", "updated_at"]
 
     def get_status_counts(self, obj) -> dict:
         return obj.status_counts()
+
+    def get_sub_status_counts(self, obj) -> dict:
+        return obj.sub_status_counts()
 
     def validate_assessor(self, value):
         if value.role != Role.ASSESSOR:
@@ -101,45 +110,56 @@ class ClauseAssessmentSerializer(serializers.ModelSerializer):
     klass_title = serializers.CharField(source="clause.requirement.klass_title", read_only=True)
     guidance = serializers.CharField(source="clause.requirement.guidance", read_only=True)
 
+    sub_assessments = serializers.SerializerMethodField()
+
     class Meta:
         model = ClauseAssessment
         fields = [
             "id", "assessment", "clause", "clause_code", "clause_title",
             "clause_description", "clause_objective", "requirement_id",
             "requirement_title", "klass_title", "guidance", "status", "text",
-            "text_edited", "updated_at",
+            "text_edited", "sub_assessments", "updated_at",
         ]
-        read_only_fields = ["assessment", "clause", "text_edited", "updated_at"]
+        # status is derived from the sub-clause verdicts (recompute_status),
+        # never set directly.
+        read_only_fields = [
+            "assessment", "clause", "status", "text_edited", "updated_at",
+        ]
 
-    def validate_status(self, value):
-        if value not in ClauseStatus.values:
-            raise serializers.ValidationError("وضعیت نامعتبر است.")
-        return value
+    def get_sub_assessments(self, obj) -> list:
+        return SubClauseAssessmentSerializer(
+            obj.sub_assessments.select_related("sub_clause").prefetch_related(
+                "attachments"
+            ),
+            many=True,
+        ).data
 
     def update(self, instance, validated_data):
         user = self.context["request"].user
-        new_status = validated_data.get("status", instance.status)
         new_text = validated_data.get("text")
-
         if new_text is not None and new_text != instance.text:
             instance.text = new_text
             instance.text_edited = True
-
-        if new_status != instance.status:
-            instance.apply_status(new_status, user=user)
-        else:
-            instance.updated_by = user
-            instance.save()
+        instance.updated_by = user
+        instance.save()
         return instance
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
     file = serializers.FileField(write_only=True)
+    # Optional evidence link to a sub-clause; the view verifies it belongs
+    # to the same assessment before saving (no cross-assessment attach).
+    sub_clause_assessment = serializers.PrimaryKeyRelatedField(
+        queryset=SubClauseAssessment.objects.all(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Attachment
-        fields = ["id", "assessment", "file", "original_name", "content_type",
-                  "size", "uploaded_by", "uploaded_at"]
+        fields = ["id", "assessment", "sub_clause_assessment", "file",
+                  "original_name", "content_type", "size", "uploaded_by",
+                  "uploaded_at"]
         read_only_fields = ["assessment", "original_name", "content_type",
                             "size", "uploaded_by", "uploaded_at"]
 
@@ -173,9 +193,31 @@ class AttachmentSerializer(serializers.ModelSerializer):
         uploaded.seek(0)
         return Attachment.objects.create(
             assessment=validated_data["assessment"],
+            sub_clause_assessment=validated_data.get("sub_clause_assessment"),
             file=uploaded,
             original_name=Path(uploaded.name).name[:255],
             content_type=magic.from_buffer(head, mime=True),
             size=uploaded.size,
             uploaded_by=request.user,
         )
+
+
+class SubClauseAssessmentSerializer(serializers.ModelSerializer):
+    sub_clause_text = serializers.CharField(source="sub_clause.text", read_only=True)
+    sub_clause_order = serializers.IntegerField(
+        source="sub_clause.order", read_only=True
+    )
+    attachments = AttachmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SubClauseAssessment
+        fields = [
+            "id", "clause_assessment", "sub_clause", "sub_clause_text",
+            "sub_clause_order", "status", "notes", "attachments", "updated_at",
+        ]
+        read_only_fields = ["clause_assessment", "sub_clause", "updated_at"]
+
+    def validate_status(self, value):
+        if value not in ClauseStatus.values:
+            raise serializers.ValidationError("وضعیت نامعتبر است.")
+        return value
