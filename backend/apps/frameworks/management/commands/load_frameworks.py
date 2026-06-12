@@ -9,6 +9,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from apps.assessments.models import Assessment
 from apps.frameworks.models import (
     Clause,
     DefaultTextTemplate,
@@ -36,7 +37,8 @@ class Command(BaseCommand):
             if not path.exists():
                 raise CommandError(f"Fixture not found: {path}")
             data = json.loads(path.read_text(encoding="utf-8"))
-            self._load(data)
+            framework = self._load(data)
+            self._sync_assessments(framework)
             self.stdout.write(self.style.SUCCESS(f"Loaded {name}"))
 
     def _load(self, data: dict):
@@ -92,3 +94,20 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  {framework.code}: {n_req} requirements, {n_cl} clauses"
         )
+        return framework
+
+    def _sync_assessments(self, framework: Framework):
+        """Backfill SubClauseAssessment rows for sub-clauses added/changed
+        above, and re-derive ClauseAssessment.status from them. Idempotent —
+        existing rows and unchanged statuses are left untouched."""
+        n_recomputed = 0
+        for assessment in Assessment.objects.filter(framework=framework):
+            assessment.create_clause_assessments()
+            for ca in assessment.clause_assessments.all():
+                if ca.recompute_status():
+                    n_recomputed += 1
+        if n_recomputed:
+            self.stdout.write(
+                f"  {framework.code}: recomputed status for {n_recomputed} "
+                "clause assessment(s)"
+            )
