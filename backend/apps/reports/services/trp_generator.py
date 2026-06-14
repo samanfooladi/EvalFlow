@@ -15,7 +15,7 @@ from .common import (
     add_cover,
     add_evaluation_specs,
     new_document,
-    result_text_and_color,
+    result_text_and_highlight,
 )
 from .docx_utils import add_heading_fa, add_rtl_paragraph, make_table, \
     set_cell_text, shade_cell
@@ -157,10 +157,10 @@ def generate_trp(assessment) -> io.BytesIO:
         shade_cell(cell)
     for idx, ca in enumerate(cas, start=1):
         cells = results.rows[idx].cells
-        result, color = result_text_and_color(ca.status)
+        result, highlight = result_text_and_highlight(ca.status)
         set_cell_text(cells[0], str(idx), align=WD_ALIGN_PARAGRAPH.CENTER)
         set_cell_text(cells[1], f"{ca.clause.code} {ca.clause.title}")
-        set_cell_text(cells[2], result, color=color, bold=bool(color),
+        set_cell_text(cells[2], result, highlight=highlight, bold=highlight,
                       align=WD_ALIGN_PARAGRAPH.CENTER)
 
     # 6-N per-clause subsections

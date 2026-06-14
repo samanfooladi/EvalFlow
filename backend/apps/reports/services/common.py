@@ -10,7 +10,6 @@ from docx.shared import Inches
 from apps.frameworks.models import ClauseStatus
 
 from .docx_utils import (
-    RED,
     add_rtl_paragraph,
     build_header_footer,
     make_table,
@@ -39,10 +38,10 @@ STATUS_RESULT_TEXT = {
 }
 
 
-def result_text_and_color(status: str) -> tuple[str, str | None]:
+def result_text_and_highlight(status: str) -> tuple[str, bool]:
     text = STATUS_RESULT_TEXT.get(status, "")
-    color = RED if status == ClauseStatus.FINDING else None
-    return text, color
+    highlight = status == ClauseStatus.FINDING
+    return text, highlight
 
 
 def new_document(*, doc_title: str, assessment, doc_code_prefix: str) -> Document:
@@ -145,19 +144,19 @@ def add_clause_result_table(document, clause_assessment, *,
                             include_evidence: bool = False) -> None:
     """The per-clause 4-row table shared by TRP section 6 and the BRP."""
     clause = clause_assessment.clause
-    result, color = result_text_and_color(clause_assessment.status)
+    result, highlight = result_text_and_highlight(clause_assessment.status)
     table = make_table(document, rows=4, cols=2)
     rows = [
-        ("عنوان الزام", clause.description or f"{clause.code} {clause.title}", None),
-        ("نتیجه نهایی آزمون", result, color),
-        ("هدف الزام", clause.objective, None),
-        ("تشریح آزمون انجام شده", clause_assessment.text, None),
+        ("عنوان الزام", clause.description or f"{clause.code} {clause.title}", False),
+        ("نتیجه نهایی آزمون", result, highlight),
+        ("هدف الزام", clause.objective, False),
+        ("تشریح آزمون انجام شده", clause_assessment.text, False),
     ]
-    for idx, (label, value, value_color) in enumerate(rows):
+    for idx, (label, value, value_highlight) in enumerate(rows):
         set_cell_text(table.rows[idx].cells[0], label, bold=True)
         shade_cell(table.rows[idx].cells[0])
-        set_cell_text(table.rows[idx].cells[1], value, color=value_color,
-                      bold=bool(value_color))
+        set_cell_text(table.rows[idx].cells[1], value, highlight=value_highlight,
+                      bold=value_highlight)
     if include_evidence:
         add_clause_evidence_images(table.rows[3].cells[1], clause_assessment)
     # Label column ~25% width

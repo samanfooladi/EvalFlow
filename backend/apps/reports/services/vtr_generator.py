@@ -17,7 +17,7 @@ from .common import (
     add_cover,
     add_evaluation_specs,
     new_document,
-    result_text_and_color,
+    result_text_and_highlight,
 )
 from .docx_utils import add_heading_fa, add_rtl_paragraph, make_table, \
     set_cell_text, shade_cell
@@ -109,7 +109,7 @@ def generate_vtr(assessment) -> io.BytesIO:
     # 3 — تشریح آزمون‌های آسیب‌پذیری
     add_heading_fa(document, "3- تشریح آزمون‌های آسیب‌پذیری")
     for idx, (requirement, items) in enumerate(grouped, start=1):
-        result, color = result_text_and_color(_category_result(items))
+        result, highlight = result_text_and_highlight(_category_result(items))
         table = make_table(document, rows=4, cols=2)
         otg_codes = "\n".join(ca.clause.code for ca in items)
         detail_parts = []
@@ -120,16 +120,16 @@ def generate_vtr(assessment) -> io.BytesIO:
             detail_parts.append("نتیجه بررسی: " + (ca.text or ""))
             detail_parts.append("")
         rows = [
-            ("عنوان آزمون", f"3-{idx} {requirement.klass_title}", None),
-            ("هدف آزمون", "این آزمون مشتمل بر موارد زیر است:\n" + otg_codes, None),
-            ("نتیجه آزمون", result, color),
-            ("تشریح روال آزمون آسیب‌پذیری", "\n".join(detail_parts).strip(), None),
+            ("عنوان آزمون", f"3-{idx} {requirement.klass_title}", False),
+            ("هدف آزمون", "این آزمون مشتمل بر موارد زیر است:\n" + otg_codes, False),
+            ("نتیجه آزمون", result, highlight),
+            ("تشریح روال آزمون آسیب‌پذیری", "\n".join(detail_parts).strip(), False),
         ]
-        for row_idx, (label, value, value_color) in enumerate(rows):
+        for row_idx, (label, value, value_highlight) in enumerate(rows):
             set_cell_text(table.rows[row_idx].cells[0], label, bold=True)
             shade_cell(table.rows[row_idx].cells[0])
-            set_cell_text(table.rows[row_idx].cells[1], value, color=value_color,
-                          bold=bool(value_color))
+            set_cell_text(table.rows[row_idx].cells[1], value, highlight=value_highlight,
+                          bold=value_highlight)
         add_rtl_paragraph(document, "")
 
     buffer = io.BytesIO()

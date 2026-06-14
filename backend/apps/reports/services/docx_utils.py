@@ -9,19 +9,18 @@ attribute values mirror the uploaded TRP/VTR sample documents:
 - RTL paragraphs: pPr/w:bidi
 - RTL table column order: tblPr/w:bidiVisual
 - Label cell shading: tcPr/w:shd/@w:fill = F2F2F2
-- Finding result text: rPr/w:color/@w:val = FF0000
+- Finding result text: black text, rPr/w:highlight/@w:val = red
 """
 from __future__ import annotations
 
 import jdatetime
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 
 FA_FONT = "B Nazanin"
 EN_FONT = "Times New Roman"
-RED = "FF0000"
 LABEL_SHADE = "F2F2F2"
 
 
@@ -45,7 +44,7 @@ def format_run(
     *,
     size: int = 12,
     bold: bool = False,
-    color: str | None = None,
+    highlight: bool = False,
     fa_font: str = FA_FONT,
     en_font: str = EN_FONT,
 ) -> None:
@@ -53,8 +52,8 @@ def format_run(
     run.font.name = en_font
     run.font.size = Pt(size)
     run.font.bold = bold
-    if color:
-        run.font.color.rgb = RGBColor.from_string(color)
+    if highlight:
+        run.font.highlight_color = WD_COLOR_INDEX.RED
 
     rPr = run._r.get_or_add_rPr()
     rFonts = _get_or_add(rPr, "w:rFonts")
@@ -68,9 +67,6 @@ def format_run(
         _get_or_add(rPr, "w:bCs")
     rtl = _get_or_add(rPr, "w:rtl")
     rtl.set(qn("w:val"), "1")
-    if color:
-        c = _get_or_add(rPr, "w:color")
-        c.set(qn("w:val"), color)
 
 
 def add_rtl_paragraph(
@@ -79,7 +75,7 @@ def add_rtl_paragraph(
     *,
     size: int = 12,
     bold: bool = False,
-    color: str | None = None,
+    highlight: bool = False,
     align=WD_ALIGN_PARAGRAPH.RIGHT,
 ) -> object:
     """Add a fully RTL paragraph (works on document, cell, header, footer)."""
@@ -88,7 +84,7 @@ def add_rtl_paragraph(
     paragraph.alignment = align
     if text:
         run = paragraph.add_run(text)
-        format_run(run, size=size, bold=bold, color=color)
+        format_run(run, size=size, bold=bold, highlight=highlight)
     return paragraph
 
 
@@ -99,7 +95,7 @@ def add_heading_fa(document, text: str, *, level: int = 1, size: int = 14):
     set_paragraph_rtl(paragraph)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run = paragraph.add_run(text)
-    format_run(run, size=size, bold=True, color="000000")
+    format_run(run, size=size, bold=True)
     return paragraph
 
 
@@ -125,7 +121,7 @@ def set_cell_text(
     *,
     size: int = 11,
     bold: bool = False,
-    color: str | None = None,
+    highlight: bool = False,
     align=WD_ALIGN_PARAGRAPH.RIGHT,
 ) -> None:
     """Replace cell content with RTL text; '\n' becomes separate paragraphs
@@ -138,7 +134,7 @@ def set_cell_text(
         set_paragraph_rtl(paragraph)
         paragraph.alignment = align
         run = paragraph.add_run(line)
-        format_run(run, size=size, bold=bold, color=color)
+        format_run(run, size=size, bold=bold, highlight=highlight)
 
 
 def make_table(document, rows: int, cols: int):

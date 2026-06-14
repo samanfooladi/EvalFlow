@@ -101,9 +101,10 @@ def test_trp_section_marked_rtl(trp_assessment):
     assert bidi is not None
 
 
-def test_trp_finding_rendered_red(trp_assessment):
+def test_trp_finding_rendered_with_red_highlight(trp_assessment):
     xml = _document_xml(generate_trp(trp_assessment))
-    assert 'w:val="FF0000"' in xml
+    assert 'w:highlight w:val="red"' in xml
+    assert 'w:val="FF0000"' not in xml  # text stays default (black), not red
     buffer = generate_trp(trp_assessment)
     doc = Document(buffer)
     all_text = "\n".join(
