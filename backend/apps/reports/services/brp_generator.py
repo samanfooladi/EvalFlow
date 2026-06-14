@@ -22,6 +22,7 @@ def generate_brp(assessment) -> io.BytesIO:
 
     findings = list(
         assessment.clause_assessments.select_related("clause", "clause__requirement")
+        .prefetch_related("sub_assessments__attachments")
         .filter(status=ClauseStatus.FINDING)
         .order_by("clause__requirement__order", "clause__order")
     )
@@ -45,7 +46,7 @@ def generate_brp(assessment) -> io.BytesIO:
         add_heading_fa(
             document, f"{idx}- {ca.clause.title} ({ca.clause.code})", level=2, size=12
         )
-        add_clause_result_table(document, ca)
+        add_clause_result_table(document, ca, include_evidence=True)
 
     buffer = io.BytesIO()
     document.save(buffer)

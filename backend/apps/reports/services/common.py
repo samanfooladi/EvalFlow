@@ -1,21 +1,32 @@
 """Shared document-building blocks used by the TRP/VTR/BRP generators."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
 
 from apps.frameworks.models import ClauseStatus
 
 from .docx_utils import (
-    RED,
     add_rtl_paragraph,
     build_header_footer,
     make_table,
     set_cell_text,
     set_page_letter,
+    set_paragraph_rtl,
+    set_section_rtl,
     shade_cell,
     shamsi_date,
 )
+
+# Evidence attachments embedded as images: only these content types are
+# pictures python-docx can render inline.
+IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
+# Fits inside the ~75%-width value column of the per-clause table
+# (6.5in content width minus margins, times 0.75).
+EVIDENCE_IMAGE_WIDTH = Inches(4.5)
 
 LAB_NAME = "مرکز ارزیابی ایمنی و امنیتی تبادل امن"
 
@@ -27,15 +38,16 @@ STATUS_RESULT_TEXT = {
 }
 
 
-def result_text_and_color(status: str) -> tuple[str, str | None]:
+def result_text_and_highlight(status: str) -> tuple[str, bool]:
     text = STATUS_RESULT_TEXT.get(status, "")
-    color = RED if status == ClauseStatus.FINDING else None
-    return text, color
+    highlight = status == ClauseStatus.FINDING
+    return text, highlight
 
 
 def new_document(*, doc_title: str, assessment, doc_code_prefix: str) -> Document:
     document = Document()
     set_page_letter(document)
+    set_section_rtl(document)
     system = assessment.system
     build_header_footer(
         document,
@@ -111,22 +123,42 @@ def add_evaluation_specs(document, assessment, *, table_caption: str) -> None:
         set_cell_text(table.rows[idx].cells[1], value)
 
 
-def add_clause_result_table(document, clause_assessment) -> None:
+def add_clause_evidence_images(cell, clause_assessment) -> None:
+    """Embed each image attachment from the clause's sub-clause evidence,
+    centered below the existing cell content."""
+    for sub_assessment in clause_assessment.sub_assessments.all():
+        for attachment in sub_assessment.attachments.all():
+            if attachment.content_type not in IMAGE_CONTENT_TYPES:
+                continue
+            path = Path(attachment.file.path)
+            if not path.exists():
+                continue
+            paragraph = cell.add_paragraph()
+            set_paragraph_rtl(paragraph)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = paragraph.add_run()
+            run.add_picture(str(path), width=EVIDENCE_IMAGE_WIDTH)
+
+
+def add_clause_result_table(document, clause_assessment, *,
+                            include_evidence: bool = False) -> None:
     """The per-clause 4-row table shared by TRP section 6 and the BRP."""
     clause = clause_assessment.clause
-    result, color = result_text_and_color(clause_assessment.status)
+    result, highlight = result_text_and_highlight(clause_assessment.status)
     table = make_table(document, rows=4, cols=2)
     rows = [
-        ("عنوان الزام", clause.description or f"{clause.code} {clause.title}", None),
-        ("نتیجه نهایی آزمون", result, color),
-        ("هدف الزام", clause.objective, None),
-        ("تشریح آزمون انجام شده", clause_assessment.text, None),
+        ("عنوان الزام", clause.description or f"{clause.code} {clause.title}", False),
+        ("نتیجه نهایی آزمون", result, highlight),
+        ("هدف الزام", clause.objective, False),
+        ("تشریح آزمون انجام شده", clause_assessment.text, False),
     ]
-    for idx, (label, value, value_color) in enumerate(rows):
+    for idx, (label, value, value_highlight) in enumerate(rows):
         set_cell_text(table.rows[idx].cells[0], label, bold=True)
         shade_cell(table.rows[idx].cells[0])
-        set_cell_text(table.rows[idx].cells[1], value, color=value_color,
-                      bold=bool(value_color))
+        set_cell_text(table.rows[idx].cells[1], value, highlight=value_highlight,
+                      bold=value_highlight)
+    if include_evidence:
+        add_clause_evidence_images(table.rows[3].cells[1], clause_assessment)
     # Label column ~25% width
     for row in table.rows:
         row.cells[0].width = document.sections[0].page_width * 1 // 4

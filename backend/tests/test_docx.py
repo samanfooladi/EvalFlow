@@ -1,10 +1,13 @@
 """DOCX generation tests: round-trip the generated files through python-docx
 and assert the RTL/formatting XML the lab's template requires is present."""
+import base64
+
 import pytest
+from django.core.files.base import ContentFile
 from django.core.management import call_command
 from docx import Document
 
-from apps.assessments.models import Assessment
+from apps.assessments.models import Assessment, Attachment
 from apps.catalog.models import Company, ProductSystem
 from apps.frameworks.models import ClauseStatus, Framework
 from apps.reports.services.brp_generator import generate_brp
@@ -12,6 +15,12 @@ from apps.reports.services.trp_generator import generate_trp
 from apps.reports.services.vtr_generator import generate_vtr
 
 from .factories import AssessorFactory
+
+# 1x1 transparent PNG
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY"
+    "42YAAAAASUVORK5CYII="
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -83,9 +92,19 @@ def test_trp_rtl_formatting_present(trp_assessment):
     assert 'w:fill="F2F2F2"' in xml  # label cell shading
 
 
-def test_trp_finding_rendered_red(trp_assessment):
+def test_trp_section_marked_rtl(trp_assessment):
+    doc = Document(generate_trp(trp_assessment))
+    section = doc.sections[0]
+    bidi = section._sectPr.find(
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bidi"
+    )
+    assert bidi is not None
+
+
+def test_trp_finding_rendered_with_red_highlight(trp_assessment):
     xml = _document_xml(generate_trp(trp_assessment))
-    assert 'w:val="FF0000"' in xml
+    assert 'w:highlight w:val="red"' in xml
+    assert 'w:val="FF0000"' not in xml  # text stays default (black), not red
     buffer = generate_trp(trp_assessment)
     doc = Document(buffer)
     all_text = "\n".join(
@@ -139,6 +158,23 @@ def test_brp_contains_only_findings(trp_assessment):
     assert finding.clause.code in cells
     assert compliant.clause.code not in cells
     assert "قبول" not in cells  # no compliant verdicts anywhere
+
+
+def test_brp_includes_evidence_images(trp_assessment):
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    sub_assessment = finding.sub_assessments.first()
+    Attachment.objects.create(
+        assessment=trp_assessment,
+        sub_clause_assessment=sub_assessment,
+        file=ContentFile(PNG_1X1, name="evidence.png"),
+        original_name="evidence.png",
+        content_type="image/png",
+        size=len(PNG_1X1),
+    )
+    doc = Document(generate_brp(trp_assessment))
+    assert len(doc.inline_shapes) == 1
 
 
 def test_brp_empty_when_no_findings(trp_assessment):
