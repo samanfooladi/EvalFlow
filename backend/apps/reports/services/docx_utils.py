@@ -159,6 +159,13 @@ def set_page_letter(document) -> None:
         section.right_margin = Inches(1)
 
 
+def set_section_rtl(document) -> None:
+    """Mark each section as right-to-left (sectPr/w:bidi)."""
+    for section in document.sections:
+        bidi = _get_or_add(section._sectPr, "w:bidi")
+        bidi.set(qn("w:val"), "1")
+
+
 def shamsi_date(gregorian_date=None) -> str:
     """Format a date (or today) as a Shamsi yyyy/mm/dd string."""
     if gregorian_date is None:

@@ -92,6 +92,15 @@ def test_trp_rtl_formatting_present(trp_assessment):
     assert 'w:fill="F2F2F2"' in xml  # label cell shading
 
 
+def test_trp_section_marked_rtl(trp_assessment):
+    doc = Document(generate_trp(trp_assessment))
+    section = doc.sections[0]
+    bidi = section._sectPr.find(
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bidi"
+    )
+    assert bidi is not None
+
+
 def test_trp_finding_rendered_red(trp_assessment):
     xml = _document_xml(generate_trp(trp_assessment))
     assert 'w:val="FF0000"' in xml

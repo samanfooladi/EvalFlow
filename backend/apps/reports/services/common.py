@@ -17,6 +17,7 @@ from .docx_utils import (
     set_cell_text,
     set_page_letter,
     set_paragraph_rtl,
+    set_section_rtl,
     shade_cell,
     shamsi_date,
 )
@@ -47,6 +48,7 @@ def result_text_and_color(status: str) -> tuple[str, str | None]:
 def new_document(*, doc_title: str, assessment, doc_code_prefix: str) -> Document:
     document = Document()
     set_page_letter(document)
+    set_section_rtl(document)
     system = assessment.system
     build_header_footer(
         document,
