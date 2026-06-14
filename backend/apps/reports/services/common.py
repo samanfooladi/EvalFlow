@@ -1,8 +1,11 @@
 """Shared document-building blocks used by the TRP/VTR/BRP generators."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
 
 from apps.frameworks.models import ClauseStatus
 
@@ -13,9 +16,17 @@ from .docx_utils import (
     make_table,
     set_cell_text,
     set_page_letter,
+    set_paragraph_rtl,
     shade_cell,
     shamsi_date,
 )
+
+# Evidence attachments embedded as images: only these content types are
+# pictures python-docx can render inline.
+IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
+# Fits inside the ~75%-width value column of the per-clause table
+# (6.5in content width minus margins, times 0.75).
+EVIDENCE_IMAGE_WIDTH = Inches(4.5)
 
 LAB_NAME = "مرکز ارزیابی ایمنی و امنیتی تبادل امن"
 
@@ -111,7 +122,25 @@ def add_evaluation_specs(document, assessment, *, table_caption: str) -> None:
         set_cell_text(table.rows[idx].cells[1], value)
 
 
-def add_clause_result_table(document, clause_assessment) -> None:
+def add_clause_evidence_images(cell, clause_assessment) -> None:
+    """Embed each image attachment from the clause's sub-clause evidence,
+    centered below the existing cell content."""
+    for sub_assessment in clause_assessment.sub_assessments.all():
+        for attachment in sub_assessment.attachments.all():
+            if attachment.content_type not in IMAGE_CONTENT_TYPES:
+                continue
+            path = Path(attachment.file.path)
+            if not path.exists():
+                continue
+            paragraph = cell.add_paragraph()
+            set_paragraph_rtl(paragraph)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = paragraph.add_run()
+            run.add_picture(str(path), width=EVIDENCE_IMAGE_WIDTH)
+
+
+def add_clause_result_table(document, clause_assessment, *,
+                            include_evidence: bool = False) -> None:
     """The per-clause 4-row table shared by TRP section 6 and the BRP."""
     clause = clause_assessment.clause
     result, color = result_text_and_color(clause_assessment.status)
@@ -127,6 +156,8 @@ def add_clause_result_table(document, clause_assessment) -> None:
         shade_cell(table.rows[idx].cells[0])
         set_cell_text(table.rows[idx].cells[1], value, color=value_color,
                       bold=bool(value_color))
+    if include_evidence:
+        add_clause_evidence_images(table.rows[3].cells[1], clause_assessment)
     # Label column ~25% width
     for row in table.rows:
         row.cells[0].width = document.sections[0].page_width * 1 // 4
