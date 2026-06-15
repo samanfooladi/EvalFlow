@@ -18,6 +18,7 @@ from .docx_utils import (
     set_paragraph_rtl,
     set_section_rtl,
     shade_cell,
+    shade_paragraph,
     shamsi_date,
 )
 
@@ -29,6 +30,9 @@ IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
 EVIDENCE_IMAGE_WIDTH = Inches(4.5)
 
 LAB_NAME = "مرکز ارزیابی ایمنی و امنیتی تبادل امن"
+
+LOGO_PATH = Path(__file__).parent / "assets" / "lab_logo.png"
+LOGO_WIDTH = Inches(1.8)
 
 STATUS_RESULT_TEXT = {
     ClauseStatus.COMPLIANT: "قبول",
@@ -59,10 +63,13 @@ def new_document(*, doc_title: str, assessment, doc_code_prefix: str) -> Documen
     return document
 
 
-def add_cover(document, *, doc_title: str, assessment) -> None:
+def add_cover(document, *, doc_title: str, assessment, logo: bool = False) -> None:
     system = assessment.system
     add_rtl_paragraph(document, "به نام خدا", size=14, bold=True,
                       align=WD_ALIGN_PARAGRAPH.CENTER)
+    if logo and LOGO_PATH.exists():
+        document.add_picture(str(LOGO_PATH), width=LOGO_WIDTH)
+        document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
     add_rtl_paragraph(document, "", align=WD_ALIGN_PARAGRAPH.CENTER)
     add_rtl_paragraph(document, doc_title, size=20, bold=True,
                       align=WD_ALIGN_PARAGRAPH.CENTER)
@@ -121,6 +128,25 @@ def add_evaluation_specs(document, assessment, *, table_caption: str) -> None:
         set_cell_text(table.rows[idx].cells[0], label, bold=True)
         shade_cell(table.rows[idx].cells[0])
         set_cell_text(table.rows[idx].cells[1], value)
+
+
+def add_callout(document, text: str, *, fill: str = "C6E0B4") -> None:
+    """A shaded note paragraph (e.g. the green 'توضیحات' box)."""
+    paragraph = add_rtl_paragraph(document, text, size=10)
+    shade_paragraph(paragraph, fill)
+
+
+def add_diagram_placeholder(document, *, height: Inches = Inches(3)) -> None:
+    """An empty bordered area where the assessor manually inserts a diagram
+    (network/architecture) directly in Word."""
+    table = make_table(document, rows=1, cols=1)
+    cell = table.rows[0].cells[0]
+    table.rows[0].height = height
+    set_cell_text(
+        cell,
+        "[محل قرارگیری نمودار — تصویر توسط ارزیاب درج می‌شود]",
+        align=WD_ALIGN_PARAGRAPH.CENTER,
+    )
 
 
 def add_clause_evidence_images(cell, clause_assessment) -> None:

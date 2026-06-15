@@ -10,17 +10,24 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from apps.frameworks.models import ClauseStatus
 
 from .common import (
+    add_callout,
     add_change_log_table,
     add_clause_result_table,
     add_cover,
+    add_diagram_placeholder,
     add_evaluation_specs,
     new_document,
     result_text_and_highlight,
 )
-from .docx_utils import add_heading_fa, add_rtl_paragraph, make_table, \
-    set_cell_text, shade_cell
+from .docx_utils import add_heading_fa, add_rtl_paragraph, add_toc, make_table, \
+    set_cell_text, set_update_fields, shade_cell
 
 DOC_TITLE = "سند گزارش آزمون کارکردی"
+
+RESULTS_NOTE = (
+    "توضیحات: تغییرات زیرساختی، پیکربندی و نسخه سامانه مورد ارزیابی از ابتدا "
+    "تا انتهای روند ارزیابی، در صورت وجود، باید توسط ارزیاب در این بخش ثبت شود."
+)
 
 
 def _ordered_clause_assessments(assessment):
@@ -59,7 +66,14 @@ def generate_trp(assessment) -> io.BytesIO:
     document = new_document(
         doc_title=DOC_TITLE, assessment=assessment, doc_code_prefix="TRP"
     )
-    add_cover(document, doc_title=DOC_TITLE, assessment=assessment)
+    set_update_fields(document)
+    add_cover(document, doc_title=DOC_TITLE, assessment=assessment, logo=True)
+
+    add_rtl_paragraph(document, "فهرست", size=16, bold=True,
+                      align=WD_ALIGN_PARAGRAPH.CENTER)
+    add_toc(document)
+    document.add_page_break()
+
     add_change_log_table(document, assessment)
 
     cas = _ordered_clause_assessments(assessment)
@@ -109,6 +123,7 @@ def generate_trp(assessment) -> io.BytesIO:
     # 4 — پیکربندی آزمون
     add_heading_fa(document, "4- پیکربندی آزمون")
     add_rtl_paragraph(document, assessment.test_configuration or "", size=11)
+    add_diagram_placeholder(document)
 
     # 5 — نتایج آزمون بر اساس کلاس‌های استاندارد معیار مشترک
     add_heading_fa(document, "5- نتایج آزمون بر اساس کلاس‌های استاندارد معیار مشترک")
@@ -159,9 +174,10 @@ def generate_trp(assessment) -> io.BytesIO:
         cells = results.rows[idx].cells
         result, highlight = result_text_and_highlight(ca.status)
         set_cell_text(cells[0], str(idx), align=WD_ALIGN_PARAGRAPH.CENTER)
-        set_cell_text(cells[1], f"{ca.clause.code} {ca.clause.title}")
+        set_cell_text(cells[1], ca.clause.description or f"{ca.clause.code} {ca.clause.title}")
         set_cell_text(cells[2], result, highlight=highlight, bold=highlight,
                       align=WD_ALIGN_PARAGRAPH.CENTER)
+    add_callout(document, RESULTS_NOTE)
 
     # 6-N per-clause subsections
     for idx, ca in enumerate(cas, start=1):

@@ -16,6 +16,7 @@ from __future__ import annotations
 import jdatetime
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
@@ -115,6 +116,15 @@ def shade_cell(cell, fill: str = LABEL_SHADE) -> None:
     shd.set(qn("w:fill"), fill)
 
 
+def shade_paragraph(paragraph, fill: str) -> None:
+    """Shade a paragraph's background (w:pPr/w:shd) — used for callout boxes."""
+    pPr = paragraph._p.get_or_add_pPr()
+    shd = _get_or_add(pPr, "w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+
+
 def set_cell_text(
     cell,
     text: str,
@@ -186,3 +196,43 @@ def build_header_footer(document, *, doc_title: str, product: str, company: str,
     footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = footer_p.add_run(f"تاریخ: {shamsi_date()}    |    {doc_code}")
     format_run(run, size=9)
+
+
+def set_update_fields(document) -> None:
+    """Tell Word to recompute fields (e.g. the TOC page numbers) on open."""
+    settings = document.settings.element
+    update = OxmlElement("w:updateFields")
+    update.set(qn("w:val"), "true")
+    settings.append(update)
+
+
+def add_toc(document, *, levels: str = "1-2") -> None:
+    """Insert a TOC field; Word fills in headings/page numbers on open
+    (or after a manual right-click → Update Field)."""
+    paragraph = document.add_paragraph()
+    set_paragraph_rtl(paragraph)
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    begin_run = paragraph.add_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f' TOC \\o "{levels}" \\h \\z \\u '
+    begin_run._r.append(fld_begin)
+    begin_run._r.append(instr)
+
+    separate_run = paragraph.add_run()
+    fld_separate = OxmlElement("w:fldChar")
+    fld_separate.set(qn("w:fldCharType"), "separate")
+    separate_run._r.append(fld_separate)
+
+    placeholder_run = paragraph.add_run(
+        "برای به‌روزرسانی فهرست، کلیک راست کرده و گزینه Update Field را انتخاب کنید."
+    )
+    format_run(placeholder_run, size=10)
+
+    end_run = paragraph.add_run()
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    end_run._r.append(fld_end)
