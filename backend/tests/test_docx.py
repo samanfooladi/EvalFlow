@@ -174,6 +174,40 @@ def test_trp_clause_image_token_inserted_inline(trp_assessment):
     assert "[[diagram]]" not in cells
 
 
+def test_trp_clause_image_resolves_regardless_of_last_editor(trp_assessment):
+    """An uploaded image must resolve by (clause_assessment, filename_slug)
+    even if someone else (e.g. a QA lead correcting the text afterwards)
+    becomes the clause's last editor — the token's owner is the image's own
+    uploader, never inferred from clause_assessment.updated_by."""
+    from .factories import QALeadFactory
+
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    Attachment.objects.create(
+        assessment=trp_assessment,
+        clause_assessment=finding,
+        file=ContentFile(PNG_1X1, name="diagram.png"),
+        original_name="diagram.png",
+        filename_slug="diagram",
+        content_type="image/png",
+        size=len(PNG_1X1),
+        uploaded_by=trp_assessment.assessor,
+    )
+    finding.text = "شرح قبل از تصویر [[diagram]] شرح بعد از تصویر"
+    finding.updated_by = QALeadFactory()  # last editor != image uploader
+    finding.save()
+
+    doc = Document(generate_trp(trp_assessment))
+    # +1 over baseline for the cover logo (logo=True for TRP).
+    assert len(doc.inline_shapes) == 2
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "[تصویر یافت نشد: diagram]" not in cells
+    assert "[[diagram]]" not in cells
+
+
 def test_trp_unresolved_image_token_shows_warning(trp_assessment):
     finding = trp_assessment.clause_assessments.filter(
         status=ClauseStatus.FINDING

@@ -173,16 +173,19 @@ def add_clause_evidence_images(cell, clause_assessment) -> None:
 
 
 def _insert_clause_image_or_warning(paragraph, token, clause_assessment, *, size) -> None:
-    """Resolve a [[token]] placeholder to an inline image from the image
-    owner's library for this clause, or render a visible warning. Bad
-    tokens (missing image, deleted file, corrupt image) never raise."""
+    """Resolve a [[token]] placeholder to an inline image from this clause's
+    image library, or render a visible warning. Bad tokens (missing image,
+    deleted file, corrupt image) never raise.
+
+    Resolution is by (clause_assessment, filename_slug) only — the
+    attachment's own `uploaded_by` is the image's owner, never inferred from
+    who last saved the clause text (which may be a different user, e.g. an
+    admin/QA lead editing another assessor's clause)."""
     try:
         from apps.assessments.models import Attachment
 
-        owner_id = clause_assessment.updated_by_id or clause_assessment.assessment.assessor_id
         attachment = Attachment.objects.filter(
             clause_assessment=clause_assessment,
-            uploaded_by_id=owner_id,
             filename_slug=token,
         ).first()
         if attachment is None or attachment.content_type not in IMAGE_CONTENT_TYPES:
