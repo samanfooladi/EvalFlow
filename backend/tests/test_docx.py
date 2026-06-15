@@ -115,16 +115,112 @@ def test_trp_finding_rendered_with_red_highlight(trp_assessment):
     assert "مصداق ندارد" in all_text
 
 
-def test_trp_contains_class_summary_and_clause_tables(trp_assessment):
+def test_trp_template_structure_and_placeholders(trp_assessment):
     doc = Document(generate_trp(trp_assessment))
     n_clauses = trp_assessment.clause_assessments.count()
-    # change log + specs + profile + class summary + results list + per-clause
-    assert len(doc.tables) >= n_clauses + 5
-    all_text = "\n".join(p.text for p in doc.paragraphs)
-    assert "نتایج آزمون بر اساس کلاس‌های استاندارد معیار مشترک" in all_text
-    assert "کلاس ممیزی امنیت" in "\n".join(
+    # info + change log + specs + profile + diagram + quality + results + per-clause
+    assert len(doc.tables) >= n_clauses + 7
+    headings = "\n".join(p.text for p in doc.paragraphs)
+    # کنترل کیفی replaces the old class-summary section
+    assert "۵- کنترل کیفی" in headings
+    assert "نتایج آزمون بر اساس کلاس‌های استاندارد معیار مشترک" not in headings
+    cells = "\n".join(
         c.text for t in doc.tables for r in t.rows for c in r.cells
     )
+    # document-information page groups + a quality-control row are present
+    assert "مشخصات محصول" in cells
+    assert "مشخصات آزمون" in cells
+    assert "شرایط استاندارد 17025" in cells
+    # Persian numerals used for change-log row numbering
+    assert "۸" in cells
+
+
+def test_trp_results_list_has_no_verdicts(trp_assessment):
+    """Section 6 summary list shows clause titles but never an evaluation
+    verdict in the نتیجه آزمون column."""
+    doc = Document(generate_trp(trp_assessment))
+    results = next(
+        t for t in doc.tables
+        if [c.text for c in t.rows[0].cells] == ["ردیف", "عنوان الزام", "نتیجه آزمون"]
+    )
+    verdict_col = [r.cells[2].text.strip() for r in results.rows[1:]]
+    assert all(v == "" for v in verdict_col)
+
+
+def test_trp_clause_image_token_inserted_inline(trp_assessment):
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    finding.text = "شرح قبل از تصویر [[diagram]] شرح بعد از تصویر"
+    finding.save()
+    Attachment.objects.create(
+        assessment=trp_assessment,
+        clause_assessment=finding,
+        file=ContentFile(PNG_1X1, name="diagram.png"),
+        original_name="diagram.png",
+        filename_slug="diagram",
+        content_type="image/png",
+        size=len(PNG_1X1),
+        uploaded_by=trp_assessment.assessor,
+    )
+    doc = Document(generate_trp(trp_assessment))
+    # +1 over baseline for the cover logo (logo=True for TRP).
+    assert len(doc.inline_shapes) == 2
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "شرح قبل از تصویر" in cells
+    assert "شرح بعد از تصویر" in cells
+    assert "[[diagram]]" not in cells
+
+
+def test_trp_clause_image_resolves_regardless_of_last_editor(trp_assessment):
+    """An uploaded image must resolve by (clause_assessment, filename_slug)
+    even if someone else (e.g. a QA lead correcting the text afterwards)
+    becomes the clause's last editor — the token's owner is the image's own
+    uploader, never inferred from clause_assessment.updated_by."""
+    from .factories import QALeadFactory
+
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    Attachment.objects.create(
+        assessment=trp_assessment,
+        clause_assessment=finding,
+        file=ContentFile(PNG_1X1, name="diagram.png"),
+        original_name="diagram.png",
+        filename_slug="diagram",
+        content_type="image/png",
+        size=len(PNG_1X1),
+        uploaded_by=trp_assessment.assessor,
+    )
+    finding.text = "شرح قبل از تصویر [[diagram]] شرح بعد از تصویر"
+    finding.updated_by = QALeadFactory()  # last editor != image uploader
+    finding.save()
+
+    doc = Document(generate_trp(trp_assessment))
+    # +1 over baseline for the cover logo (logo=True for TRP).
+    assert len(doc.inline_shapes) == 2
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "[تصویر یافت نشد: diagram]" not in cells
+    assert "[[diagram]]" not in cells
+
+
+def test_trp_unresolved_image_token_shows_warning(trp_assessment):
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    finding.text = "متن با [[missing]] درج‌نشده"
+    finding.save()
+    doc = Document(generate_trp(trp_assessment))
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "[تصویر یافت نشد: missing]" in cells
+    # Only the cover logo — no image inserted for the unresolved token.
+    assert len(doc.inline_shapes) == 1
 
 
 def test_vtr_generates_with_categories(vtr_assessment):

@@ -52,7 +52,11 @@ class IsAssignedOrElevated(BasePermission):
         user = request.user
         if user.is_elevated:
             return True
-        if hasattr(obj, "clause_assessment"):
+        # Only redirect through `clause_assessment` when the object has no
+        # `assessment` relation of its own (SubClauseAssessment). Attachment
+        # also has a (nullable) `clause_assessment` FK for the clause-text
+        # image library, but always has its own `assessment` to check.
+        if not hasattr(obj, "assessment") and getattr(obj, "clause_assessment", None):
             obj = obj.clause_assessment
         assessment = getattr(obj, "assessment", obj)
         if user.role == Role.ASSESSOR:

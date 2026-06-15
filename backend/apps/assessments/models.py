@@ -253,6 +253,17 @@ class Attachment(models.Model):
         on_delete=models.CASCADE,
         related_name="attachments",
     )
+    # Clause-text image library: a [[filename_slug]] placeholder in
+    # ClauseAssessment.text resolves to this, scoped to (clause_assessment,
+    # uploaded_by) — each user only sees/uses their own images for a clause.
+    clause_assessment = models.ForeignKey(
+        ClauseAssessment,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    filename_slug = models.SlugField(max_length=80, blank=True)
     file = models.FileField(upload_to=attachment_upload_path, max_length=255)
     original_name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=128)
@@ -264,6 +275,31 @@ class Attachment(models.Model):
 
     class Meta:
         ordering = ["-uploaded_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["clause_assessment", "uploaded_by", "filename_slug"],
+                name="uniq_clause_image_slug_per_user",
+            )
+        ]
 
     def __str__(self):
         return self.original_name
+
+    @classmethod
+    def unique_image_slug(cls, clause_assessment, user, original_name: str) -> str:
+        """A short, URL/placeholder-safe slug, unique within this user's
+        image library for the clause (e.g. "screenshot", "screenshot-2")."""
+        from django.utils.text import slugify
+
+        base = slugify(Path(original_name).stem)[:60] or "image"
+        existing = set(
+            cls.objects.filter(
+                clause_assessment=clause_assessment, uploaded_by=user
+            ).values_list("filename_slug", flat=True)
+        )
+        slug = base
+        n = 1
+        while slug in existing:
+            n += 1
+            slug = f"{base}-{n}"
+        return slug

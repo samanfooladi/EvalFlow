@@ -14,6 +14,13 @@ from .models import (
     SubClauseAssessment,
 )
 
+# Clause-text image library: only real images, sniffed by content.
+_IMAGE_EXT_MIME = {
+    "png": {"image/png"},
+    "jpg": {"image/jpeg"},
+    "jpeg": {"image/jpeg"},
+}
+
 # Extension -> acceptable MIME types from content sniffing. A mismatch
 # (e.g. an .exe renamed to .pdf) is rejected.
 _EXT_MIME = {
@@ -196,6 +203,61 @@ class AttachmentSerializer(serializers.ModelSerializer):
             sub_clause_assessment=validated_data.get("sub_clause_assessment"),
             file=uploaded,
             original_name=Path(uploaded.name).name[:255],
+            content_type=magic.from_buffer(head, mime=True),
+            size=uploaded.size,
+            uploaded_by=request.user,
+        )
+
+
+class ClauseImageSerializer(serializers.ModelSerializer):
+    """A user's uploaded image for a clause's text, referenced via
+    [[filename_slug]] placeholders. Strictly scoped to the uploading user
+    and the clause assessment it was uploaded for."""
+
+    file = serializers.FileField(write_only=True)
+    placeholder_token = serializers.SerializerMethodField()
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attachment
+        fields = ["id", "filename_slug", "placeholder_token", "url", "file"]
+        read_only_fields = ["id", "filename_slug", "placeholder_token", "url"]
+
+    def validate_file(self, uploaded):
+        if uploaded.size > settings.UPLOAD_MAX_BYTES:
+            raise serializers.ValidationError(
+                f"حداکثر حجم مجاز فایل {settings.UPLOAD_MAX_BYTES // (1024*1024)} مگابایت است."
+            )
+        name = Path(uploaded.name or "")
+        ext = name.suffix.lower().lstrip(".")
+        if ext not in _IMAGE_EXT_MIME:
+            raise serializers.ValidationError("فقط تصاویر PNG یا JPEG مجاز است.")
+        head = uploaded.read(8192)
+        uploaded.seek(0)
+        sniffed = magic.from_buffer(head, mime=True)
+        if sniffed not in _IMAGE_EXT_MIME[ext]:
+            raise serializers.ValidationError("محتوای فایل با پسوند آن همخوانی ندارد.")
+        return uploaded
+
+    def get_placeholder_token(self, obj) -> str:
+        return f"[[{obj.filename_slug}]]"
+
+    def get_url(self, obj) -> str:
+        return f"/attachments/{obj.id}/inline/"
+
+    def create(self, validated_data):
+        uploaded = validated_data["file"]
+        request = self.context["request"]
+        clause_assessment = validated_data["clause_assessment"]
+        head = uploaded.read(8192)
+        uploaded.seek(0)
+        slug = Attachment.unique_image_slug(clause_assessment, request.user, uploaded.name)
+        return Attachment.objects.create(
+            assessment=clause_assessment.assessment,
+            clause_assessment=clause_assessment,
+            file=uploaded,
+            original_name=Path(uploaded.name).name[:255],
+            filename_slug=slug,
             content_type=magic.from_buffer(head, mime=True),
             size=uploaded.size,
             uploaded_by=request.user,

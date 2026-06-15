@@ -21,7 +21,9 @@ def generate_brp(assessment) -> io.BytesIO:
     add_cover(document, doc_title=DOC_TITLE, assessment=assessment)
 
     findings = list(
-        assessment.clause_assessments.select_related("clause", "clause__requirement")
+        assessment.clause_assessments.select_related(
+            "clause", "clause__requirement", "assessment", "updated_by"
+        )
         .prefetch_related("sub_assessments__attachments")
         .filter(status=ClauseStatus.FINDING)
         .order_by("clause__requirement__order", "clause__order")

@@ -3,18 +3,94 @@ import { api, apiErrorMessage } from "@/api/client";
 import type {
   AttachmentInfo,
   ClauseAssessment,
+  ClauseImage,
   ClauseStatusValue,
   SubClauseAssessment,
 } from "@/api/types";
 import { Badge, Button, ErrorText, Textarea } from "@/components/ui";
 import { CLAUSE_STATUS_LABELS } from "./ClauseSidebar";
 import {
+  useClauseImageBlobUrl,
+  useClauseImages,
   useDeleteEvidence,
   useResetClauseText,
   useUpdateClause,
   useUpdateSubClause,
+  useUploadClauseImage,
   useUploadEvidence,
 } from "./useWorkspace";
+
+const IMAGE_TOKEN_RE = /(\[\[[^[\]]+\]\])/g;
+
+/** A clickable chip: thumbnail + filename_slug, inserts the placeholder
+ * token at the caller's cursor position. */
+function ClauseImageChip({
+  image,
+  onInsert,
+}: {
+  image: ClauseImage;
+  onInsert: (token: string) => void;
+}) {
+  const { data: src } = useClauseImageBlobUrl(image.url);
+  return (
+    <button
+      type="button"
+      onClick={() => onInsert(image.placeholder_token)}
+      title={image.placeholder_token}
+      className="flex items-center gap-2 rounded-lg border border-surface-700 bg-surface-800/60 px-2 py-1.5 text-xs text-ink-300 transition-colors hover:border-accent-600/60 hover:text-accent-400"
+    >
+      {src ? (
+        <img src={src} alt="" className="h-8 w-8 rounded object-cover" />
+      ) : (
+        <span className="h-8 w-8 shrink-0 rounded bg-surface-700" />
+      )}
+      <span className="truncate font-mono" dir="ltr">
+        {image.filename_slug}
+      </span>
+    </button>
+  );
+}
+
+/** Live preview: renders the text as-is, replacing each [[token]] with the
+ * matching image's thumbnail (or a warning if it can't be resolved). */
+function ClauseTextPreview({ text, images }: { text: string; images: ClauseImage[] }) {
+  const parts = text.split(IMAGE_TOKEN_RE);
+  return (
+    <div className="whitespace-pre-wrap rounded-lg border border-surface-700 bg-surface-900/40 p-3 text-sm leading-7 text-ink-300">
+      {parts.map((part, i) => {
+        const match = /^\[\[([^[\]]+)\]\]$/.exec(part);
+        if (!match) return <span key={i}>{part}</span>;
+        const image = images.find((img) => img.filename_slug === match[1]);
+        if (!image) {
+          return (
+            <span
+              key={i}
+              className="rounded bg-finding-500/15 px-1.5 py-0.5 text-xs text-finding-400"
+            >
+              [تصویر یافت نشد: {match[1]}]
+            </span>
+          );
+        }
+        return <PreviewThumb key={i} image={image} />;
+      })}
+      {parts.length === 0 || (parts.length === 1 && !parts[0]) ? (
+        <span className="text-ink-600">— متنی وارد نشده است —</span>
+      ) : null}
+    </div>
+  );
+}
+
+function PreviewThumb({ image }: { image: ClauseImage }) {
+  const { data: src } = useClauseImageBlobUrl(image.url);
+  if (!src) return <span className="text-ink-600">…</span>;
+  return (
+    <img
+      src={src}
+      alt={image.filename_slug}
+      className="mx-1 inline-block h-20 max-w-[12rem] rounded border border-surface-700 object-contain align-middle"
+    />
+  );
+}
 
 const STATUS_BADGE_TONE: Record<ClauseStatusValue, "neutral" | "compliant" | "finding" | "warn"> = {
   unreviewed: "neutral",
@@ -257,9 +333,14 @@ export function ClauseEditor({
 }) {
   const update = useUpdateClause(assessmentId);
   const resetText = useResetClauseText(assessmentId);
+  const images = useClauseImages(clause.id);
+  const uploadImage = useUploadClauseImage(clause.id);
   const [draft, setDraft] = useState(clause.text);
   const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
   const [showGuidance, setShowGuidance] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
 
   // Re-sync local draft when switching clause or after server updates.
   useEffect(() => {
@@ -275,6 +356,21 @@ export function ClauseEditor({
       { id: clause.id, text: draft },
       { onError: (err) => setError(apiErrorMessage(err)) },
     );
+  }
+
+  /** Insert a placeholder token at the current cursor position — the only
+   * way tokens get into the text (no manual typing). */
+  function insertToken(token: string) {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + token + draft.slice(end);
+    setDraft(next);
+    const cursor = start + token.length;
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(cursor, cursor);
+    });
   }
 
   const subs = clause.sub_assessments;
@@ -372,26 +468,80 @@ export function ClauseEditor({
             بازنشانی به متن پیش‌فرض
           </button>
         </div>
-        <Textarea
-          rows={8}
-          value={draft}
-          readOnly={!editable}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="با تعیین نتیجه بندها، متن پیش‌فرض سند ایجاد می‌شود…"
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <Button
-            onClick={saveText}
-            disabled={!editable || !dirty || update.isPending}
-          >
-            {update.isPending ? "در حال ذخیره…" : "ذخیره متن"}
-          </Button>
-          {dirty && (
-            <span className="text-xs text-warn-400">تغییرات ذخیره نشده دارید</span>
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="min-w-0 flex-1">
+            <Textarea
+              ref={textareaRef}
+              rows={8}
+              value={draft}
+              readOnly={!editable}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="با تعیین نتیجه بندها، متن پیش‌فرض سند ایجاد می‌شود…"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <Button
+                onClick={saveText}
+                disabled={!editable || !dirty || update.isPending}
+              >
+                {update.isPending ? "در حال ذخیره…" : "ذخیره متن"}
+              </Button>
+              {dirty && (
+                <span className="text-xs text-warn-400">تغییرات ذخیره نشده دارید</span>
+              )}
+            </div>
+            <div className="mt-3">
+              <ErrorText>{error}</ErrorText>
+            </div>
+          </div>
+
+          {editable && (
+            <div className="w-full shrink-0 lg:w-60">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+                تصاویر — برای درج کلیک کنید
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {images.data?.map((image) => (
+                  <ClauseImageChip key={image.id} image={image} onInsert={insertToken} />
+                ))}
+                {images.data?.length === 0 && (
+                  <p className="text-xs text-ink-600">تصویری بارگذاری نشده است.</p>
+                )}
+              </div>
+              <input
+                ref={imageInput}
+                type="file"
+                accept="image/png,image/jpeg"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setImageError("");
+                    uploadImage.mutate(file, {
+                      onError: (err) => setImageError(apiErrorMessage(err)),
+                    });
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <button
+                disabled={uploadImage.isPending}
+                onClick={() => imageInput.current?.click()}
+                className="mt-2 w-full rounded-md border border-dashed border-surface-600 px-2.5 py-1.5 text-xs text-ink-500 transition-colors hover:border-accent-600/60 hover:text-accent-400 disabled:opacity-50"
+              >
+                {uploadImage.isPending ? "در حال بارگذاری…" : "+ تصویر"}
+              </button>
+              <div className="mt-2">
+                <ErrorText>{imageError}</ErrorText>
+              </div>
+            </div>
           )}
         </div>
-        <div className="mt-3">
-          <ErrorText>{error}</ErrorText>
+
+        <div className="mt-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+            پیش‌نمایش
+          </h4>
+          <ClauseTextPreview text={draft} images={images.data ?? []} />
         </div>
       </div>
     </div>
