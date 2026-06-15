@@ -147,6 +147,48 @@ def test_trp_results_list_has_no_verdicts(trp_assessment):
     assert all(v == "" for v in verdict_col)
 
 
+def test_trp_clause_image_token_inserted_inline(trp_assessment):
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    finding.text = "شرح قبل از تصویر [[diagram]] شرح بعد از تصویر"
+    finding.save()
+    Attachment.objects.create(
+        assessment=trp_assessment,
+        clause_assessment=finding,
+        file=ContentFile(PNG_1X1, name="diagram.png"),
+        original_name="diagram.png",
+        filename_slug="diagram",
+        content_type="image/png",
+        size=len(PNG_1X1),
+        uploaded_by=trp_assessment.assessor,
+    )
+    doc = Document(generate_trp(trp_assessment))
+    # +1 over baseline for the cover logo (logo=True for TRP).
+    assert len(doc.inline_shapes) == 2
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "شرح قبل از تصویر" in cells
+    assert "شرح بعد از تصویر" in cells
+    assert "[[diagram]]" not in cells
+
+
+def test_trp_unresolved_image_token_shows_warning(trp_assessment):
+    finding = trp_assessment.clause_assessments.filter(
+        status=ClauseStatus.FINDING
+    ).first()
+    finding.text = "متن با [[missing]] درج‌نشده"
+    finding.save()
+    doc = Document(generate_trp(trp_assessment))
+    cells = "\n".join(
+        c.text for t in doc.tables for r in t.rows for c in r.cells
+    )
+    assert "[تصویر یافت نشد: missing]" in cells
+    # Only the cover logo — no image inserted for the unresolved token.
+    assert len(doc.inline_shapes) == 1
+
+
 def test_vtr_generates_with_categories(vtr_assessment):
     doc = Document(generate_vtr(vtr_assessment))
     cells = "\n".join(

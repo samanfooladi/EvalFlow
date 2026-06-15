@@ -3,6 +3,7 @@ import { api } from "@/api/client";
 import type {
   Assessment,
   ClauseAssessment,
+  ClauseImage,
   ClauseStatusValue,
   SubClauseAssessment,
 } from "@/api/types";
@@ -115,6 +116,47 @@ export function useDeleteEvidence(assessmentId: string) {
       });
       void queryClient.invalidateQueries({ queryKey: ["attachments", assessmentId] });
     },
+  });
+}
+
+export function useClauseImages(clauseId: number) {
+  return useQuery({
+    queryKey: ["clause-images", clauseId],
+    queryFn: () =>
+      api.get<ClauseImage[]>(`/clause-assessments/${clauseId}/images/`).then((r) => r.data),
+  });
+}
+
+export function useUploadClauseImage(clauseId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api
+        .post<ClauseImage>(`/clause-assessments/${clauseId}/images/`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+        .then((r) => r.data);
+    },
+    onSuccess: (image) => {
+      queryClient.setQueryData<ClauseImage[]>(
+        ["clause-images", clauseId],
+        (old) => (old ? [...old, image] : [image]),
+      );
+    },
+  });
+}
+
+/** Fetch an authenticated clause image and expose it as an object URL for
+ * <img src>, since <img> tags can't carry the Bearer auth header. */
+export function useClauseImageBlobUrl(url: string | undefined) {
+  return useQuery({
+    queryKey: ["clause-image-blob", url],
+    queryFn: () =>
+      api.get(url as string, { responseType: "blob" }).then((r) => URL.createObjectURL(r.data as Blob)),
+    enabled: !!url,
+    staleTime: Infinity,
   });
 }
 

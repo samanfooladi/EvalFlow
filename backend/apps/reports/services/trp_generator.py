@@ -56,7 +56,7 @@ QUALITY_CONTROL_ROWS = [
 def _ordered_clause_assessments(assessment):
     return list(
         assessment.clause_assessments.select_related(
-            "clause", "clause__requirement"
+            "clause", "clause__requirement", "assessment", "updated_by"
         ).order_by("clause__requirement__order", "clause__order")
     )
 

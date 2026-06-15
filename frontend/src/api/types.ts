@@ -91,6 +91,13 @@ export interface AttachmentInfo {
   sub_clause_assessment?: number | null;
 }
 
+export interface ClauseImage {
+  id: number;
+  filename_slug: string;
+  placeholder_token: string;
+  url: string;
+}
+
 export interface SubClauseAssessment {
   id: number;
   clause_assessment: number;

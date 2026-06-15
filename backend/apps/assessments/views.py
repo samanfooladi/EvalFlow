@@ -25,6 +25,7 @@ from .serializers import (
     AssessmentUpdateSerializer,
     AttachmentSerializer,
     ClauseAssessmentSerializer,
+    ClauseImageSerializer,
     SubClauseAssessmentSerializer,
 )
 from .transitions import transition
@@ -161,6 +162,7 @@ class ClauseAssessmentViewSet(
         "update": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
         "partial_update": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
         "reset_text": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
+        "images": ALL_ROLES,  # GET is read-only; POST is role-checked inline
     }
 
     def get_queryset(self):
@@ -209,6 +211,29 @@ class ClauseAssessmentViewSet(
                   object_id=str(ca.pk), object_repr=str(ca),
                   changes={"text": "reset_to_default"})
         return Response(ClauseAssessmentSerializer(ca).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def images(self, request, pk=None):
+        """The current user's [[placeholder_token]] image library for this
+        clause — strictly scoped to (clause assessment, uploading user)."""
+        ca = self.get_object()
+        if request.method == "GET":
+            qs = ca.images.filter(uploaded_by=request.user).order_by("id")
+            return Response(
+                ClauseImageSerializer(qs, many=True, context={"request": request}).data
+            )
+        self._check_editable(ca)
+        if request.user.role == Role.REVIEWER:
+            raise PermissionDenied("بازبین مجاز به بارگذاری تصویر نیست.")
+        serializer = ClauseImageSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        attachment = serializer.save(clause_assessment=ca)
+        log_event(request, action="upload", model="assessments.Attachment",
+                  object_id=str(attachment.pk), object_repr=attachment.original_name)
+        return Response(
+            ClauseImageSerializer(attachment, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class SubClauseAssessmentViewSet(
@@ -273,6 +298,7 @@ class AttachmentViewSet(
         "retrieve": ALL_ROLES,
         "destroy": frozenset({Role.ADMIN, Role.QA_LEAD, Role.ASSESSOR}),
         "download": ALL_ROLES,
+        "inline": ALL_ROLES,
     }
 
     def get_queryset(self):
@@ -304,4 +330,22 @@ class AttachmentViewSet(
         # Force download; never render user content in the browser.
         response["X-Content-Type-Options"] = "nosniff"
         response["Content-Type"] = "application/octet-stream"
+        return response
+
+    @action(detail=True, methods=["get"])
+    def inline(self, request, pk=None):
+        """Render a clause-text image library item for thumbnail/preview
+        use. Strictly scoped to its owner — never another user's image,
+        even an elevated one."""
+        attachment = self.get_object()
+        if (
+            attachment.clause_assessment_id is None
+            or attachment.uploaded_by_id != request.user.id
+        ):
+            raise PermissionDenied("دسترسی به این تصویر مجاز نیست.")
+        response = FileResponse(
+            attachment.file.open("rb"), content_type=attachment.content_type
+        )
+        response["Content-Disposition"] = "inline"
+        response["X-Content-Type-Options"] = "nosniff"
         return response
