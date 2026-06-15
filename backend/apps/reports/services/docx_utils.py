@@ -18,11 +18,27 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 
 FA_FONT = "B Nazanin"
 EN_FONT = "Times New Roman"
 LABEL_SHADE = "F2F2F2"
+
+# Palette mirroring the lab template
+GROUP_LABEL_FILL = "1F3864"   # dark blue — info-table group labels, results header
+FIELD_LABEL_FILL = "595959"   # dark gray — info-table field labels
+HEADER_BLUE = "4472C4"        # table header rows
+ROW_BLUE_LIGHT = "DDEBF7"
+ROW_BLUE_DARK = "BDD7EE"
+WHITE = "FFFFFF"
+BLACK = "000000"
+
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def fa_num(value) -> str:
+    """Render Latin digits as Persian numerals (۰۱۲…)."""
+    return str(value).translate(_FA_DIGITS)
 
 
 def _get_or_add(parent, tag: str):
@@ -46,6 +62,7 @@ def format_run(
     size: int = 12,
     bold: bool = False,
     highlight: bool = False,
+    color: str | None = None,
     fa_font: str = FA_FONT,
     en_font: str = EN_FONT,
 ) -> None:
@@ -55,6 +72,8 @@ def format_run(
     run.font.bold = bold
     if highlight:
         run.font.highlight_color = WD_COLOR_INDEX.RED
+    if color:
+        run.font.color.rgb = RGBColor.from_string(color)
 
     rPr = run._r.get_or_add_rPr()
     rFonts = _get_or_add(rPr, "w:rFonts")
@@ -77,6 +96,7 @@ def add_rtl_paragraph(
     size: int = 12,
     bold: bool = False,
     highlight: bool = False,
+    color: str | None = None,
     align=WD_ALIGN_PARAGRAPH.RIGHT,
 ) -> object:
     """Add a fully RTL paragraph (works on document, cell, header, footer)."""
@@ -85,18 +105,22 @@ def add_rtl_paragraph(
     paragraph.alignment = align
     if text:
         run = paragraph.add_run(text)
-        format_run(run, size=size, bold=bold, highlight=highlight)
+        format_run(run, size=size, bold=bold, highlight=highlight, color=color)
     return paragraph
 
 
-def add_heading_fa(document, text: str, *, level: int = 1, size: int = 14):
+def add_heading_fa(document, text: str, *, level: int = 1, size: int = 14,
+                   page_break_before: bool = False):
     """Persian heading using the built-in Heading style (keeps navigation
-    pane/TOC behaviour) with RTL + complex-script font overrides."""
+    pane/TOC behaviour) with RTL + complex-script font overrides. Forced
+    black (the lab template never uses blue headings)."""
     paragraph = document.add_heading(level=level)
     set_paragraph_rtl(paragraph)
     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    if page_break_before:
+        paragraph.paragraph_format.page_break_before = True
     run = paragraph.add_run(text)
-    format_run(run, size=size, bold=True)
+    format_run(run, size=size, bold=True, color=BLACK)
     return paragraph
 
 
@@ -132,10 +156,10 @@ def set_cell_text(
     size: int = 11,
     bold: bool = False,
     highlight: bool = False,
+    color: str | None = None,
     align=WD_ALIGN_PARAGRAPH.RIGHT,
 ) -> None:
-    """Replace cell content with RTL text; '\n' becomes separate paragraphs
-    and lines starting with '- ' render as bullet-like lines."""
+    """Replace cell content with RTL text; '\n' becomes separate paragraphs."""
     cell.text = ""
     first = True
     for line in (text or "").split("\n"):
@@ -144,7 +168,7 @@ def set_cell_text(
         set_paragraph_rtl(paragraph)
         paragraph.alignment = align
         run = paragraph.add_run(line)
-        format_run(run, size=size, bold=bold, highlight=highlight)
+        format_run(run, size=size, bold=bold, highlight=highlight, color=color)
 
 
 def make_table(document, rows: int, cols: int):
