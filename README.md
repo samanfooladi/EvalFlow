@@ -60,6 +60,9 @@ Production uses `evalflow.settings.prod`: HSTS, SSL redirect, strict
 security headers, Argon2 password hashing, login throttling, append-only
 audit log, and role-scoped querysets throughout.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the system design: data model,
+API/permission model, document-generation pipeline, and security posture.
+
 ## Project layout
 
 ```
